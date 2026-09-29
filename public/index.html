@@ -3,156 +3,244 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Library Management System</title>
+  <title>Library Desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="topbar">
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <span class="logo" aria-hidden="true">📚</span>
+      <div class="brand-mark" data-icon="book"></div>
       <div>
-        <h1>Library Management System</h1>
-        <p class="sub">Librarian console · <span id="today"></span></p>
+        <div class="brand-name">Library Desk</div>
+        <div class="brand-sub">Librarian console</div>
       </div>
     </div>
-    <nav class="tabs" role="tablist">
-      <button class="tab active" data-view="dashboard">Dashboard</button>
-      <button class="tab" data-view="books">Books</button>
-      <button class="tab" data-view="members">Members</button>
-      <button class="tab" data-view="circulation">Issue &amp; Return</button>
-      <button class="tab" data-view="reservations">Reservations</button>
+    <nav class="nav" aria-label="Main">
+      <a href="#/dashboard" class="nav-item" data-view="dashboard"><span data-icon="grid"></span>Dashboard</a>
+      <a href="#/circulation" class="nav-item" data-view="circulation"><span data-icon="repeat"></span>Issue &amp; Return<span class="nav-badge danger" id="nb-overdue" hidden></span></a>
+      <a href="#/reservations" class="nav-item" data-view="reservations"><span data-icon="bookmark"></span>Reservations<span class="nav-badge" id="nb-ready" hidden></span></a>
+      <a href="#/books" class="nav-item" data-view="books"><span data-icon="book"></span>Books</a>
+      <a href="#/members" class="nav-item" data-view="members"><span data-icon="users"></span>Members<span class="nav-badge warn" id="nb-fines" hidden></span></a>
     </nav>
-  </header>
+    <div class="sidebar-foot">
+      <div class="today-card">
+        <span data-icon="clock"></span>
+        <div><div class="muted-s">Today</div><div id="today-label">—</div></div>
+      </div>
+      <button class="theme-btn" id="theme-btn" type="button" aria-label="Toggle dark mode"><span data-icon="moon"></span><span id="theme-label">Dark mode</span></button>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
 
-  <main>
-    <!-- DASHBOARD -->
-    <section id="view-dashboard" class="view active">
-      <div class="stats" id="stats"></div>
-      <div class="grid2">
-        <div class="card">
-          <div class="card-head"><h2>Ready for pickup</h2><span class="hint">Copies held for 2 days for the first person in the queue</span></div>
-          <div id="dash-ready"></div>
-        </div>
-        <div class="card">
-          <div class="card-head"><h2>Pending reservations</h2><span class="hint">Waiting for a copy to be returned</span></div>
-          <div id="dash-pending"></div>
-        </div>
+  <!-- MAIN -->
+  <div class="main">
+    <header class="pagebar">
+      <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Open menu"><span data-icon="menu"></span></button>
+      <div class="pagebar-text">
+        <h1 id="page-title">Dashboard</h1>
+        <p id="page-sub"></p>
       </div>
-      <div class="card">
-        <div class="card-head">
-          <h2>Overdue</h2>
-          <span class="hint">Fine accrues at ₹5 per day late</span>
-          <a class="btn small" href="/api/reports/overdue.csv" download>⬇ Export CSV</a>
-        </div>
-        <div id="dash-overdue"></div>
-      </div>
-      <div class="card">
-        <div class="card-head"><h2>Issued today</h2></div>
-        <div id="dash-today"></div>
-      </div>
-    </section>
+      <div class="page-actions" id="page-actions"></div>
+    </header>
 
-    <!-- BOOKS -->
-    <section id="view-books" class="view">
-      <div class="card">
-        <form id="book-search" class="toolbar">
-          <input type="search" name="q" placeholder="Search books…" aria-label="Search books">
-          <select name="field" aria-label="Search in">
-            <option value="all">All fields</option>
-            <option value="title">Title</option>
-            <option value="author">Author</option>
-            <option value="isbn">ISBN</option>
-            <option value="category">Category</option>
-          </select>
-          <label class="check"><input type="checkbox" name="available"> Available only</label>
-          <span class="spacer"></span>
-          <button type="button" class="btn" id="btn-import">⬆ Import CSV</button>
-          <button type="button" class="btn primary" id="btn-add-book">+ Add book</button>
-          <input type="file" id="import-file" accept=".csv,text/csv" hidden>
+    <main class="content">
+      <!-- DASHBOARD -->
+      <section class="view" id="view-dashboard">
+        <div class="kpis" id="kpis"></div>
+        <div class="quick" id="quick">
+          <button class="quick-btn" data-go="issue"><span class="qi indigo" data-icon="arrowOut"></span><span><b>Issue a book</b><small>Lend to a member</small></span></button>
+          <button class="quick-btn" data-go="return"><span class="qi green" data-icon="arrowIn"></span><span><b>Return a book</b><small>Calculate fines</small></span></button>
+          <button class="quick-btn" data-go="reserve"><span class="qi amber" data-icon="bookmark"></span><span><b>Reserve</b><small>Join the queue</small></span></button>
+          <button class="quick-btn" data-go="add-member"><span class="qi rose" data-icon="userPlus"></span><span><b>New member</b><small>Register a reader</small></span></button>
+        </div>
+        <div class="grid2">
+          <div class="panel">
+            <div class="panel-head"><div><h2>Ready for pickup</h2><p>Copies held 2 days for the first person in the queue</p></div></div>
+            <div id="dash-ready"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><h2>Waiting queue</h2><p>Members waiting for a copy to come back</p></div></div>
+            <div id="dash-pending"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <div><h2>Overdue</h2><p>Fine builds at ₹5 per day late and is recorded on return</p></div>
+            <a class="btn ghost" href="/api/reports/overdue.csv" download><span data-icon="download"></span>Export CSV</a>
+          </div>
+          <div id="dash-overdue"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div><h2>Issued today</h2></div></div>
+          <div id="dash-today"></div>
+        </div>
+      </section>
+
+      <!-- CIRCULATION -->
+      <section class="view" id="view-circulation">
+        <div class="segmented big" id="circ-tabs" role="tablist">
+          <button data-tab="issue" class="on"><span data-icon="arrowOut"></span>Issue</button>
+          <button data-tab="return"><span data-icon="arrowIn"></span>Return</button>
+        </div>
+
+        <div id="circ-issue" class="circ-pane">
+          <form id="issue-form" class="issue-layout" autocomplete="off">
+            <div class="panel">
+              <div class="step"><span class="step-n">1</span><h2>Member</h2></div>
+              <div class="picker" id="pk-issue-member">
+                <span class="picker-ico" data-icon="search"></span>
+                <input class="picker-input" placeholder="Search by name, member ID or phone…" aria-label="Member">
+                <button type="button" class="picker-clear" aria-label="Clear" data-icon="x"></button>
+                <ul class="picker-list" hidden role="listbox"></ul>
+              </div>
+              <div id="issue-member-card"></div>
+
+              <div class="step"><span class="step-n">2</span><h2>Book</h2></div>
+              <div class="picker" id="pk-issue-book">
+                <span class="picker-ico" data-icon="search"></span>
+                <input class="picker-input" placeholder="Search by title, author or ISBN…" aria-label="Book">
+                <button type="button" class="picker-clear" aria-label="Clear" data-icon="x"></button>
+                <ul class="picker-list" hidden role="listbox"></ul>
+              </div>
+              <div id="issue-book-card"></div>
+
+              <div class="step"><span class="step-n">3</span><h2>Loan period</h2></div>
+              <div class="row2">
+                <label class="field">Issue date<input type="date" name="issuedOn" required></label>
+                <label class="field">Due date<input type="date" name="dueOn" required></label>
+              </div>
+              <div class="chips" id="due-chips">
+                <button type="button" class="chip" data-days="7">7 days</button>
+                <button type="button" class="chip on" data-days="14">14 days (default)</button>
+                <button type="button" class="chip" data-days="21">21 days</button>
+              </div>
+            </div>
+
+            <div class="panel sticky">
+              <h2>Pre-issue check</h2>
+              <p class="muted">Every rule is checked again on the server when you issue.</p>
+              <ul class="checks" id="issue-checks"><li class="pending"><span data-icon="clock"></span>Choose a member and a book</li></ul>
+              <button class="btn primary block" type="submit" id="issue-submit" disabled><span data-icon="arrowOut"></span>Issue book</button>
+              <p class="block-reason" id="issue-reason"></p>
+            </div>
+          </form>
+        </div>
+
+        <div id="circ-return" class="circ-pane" hidden>
+          <div class="panel">
+            <div class="toolbar">
+              <div class="search"><span data-icon="search"></span><input id="loan-q" type="search" placeholder="Find a loan by member, book or ISBN…" data-slash></div>
+              <div class="segmented" id="loan-filter">
+                <button data-v="active" class="on">On loan</button>
+                <button data-v="overdue">Overdue</button>
+                <button data-v="returned">Returned</button>
+                <button data-v="all">All</button>
+              </div>
+            </div>
+            <div id="loans-table"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RESERVATIONS -->
+      <section class="view" id="view-reservations">
+        <form id="reserve-form" class="panel reserve-bar" autocomplete="off">
+          <div class="picker" id="pk-res-member">
+            <span class="picker-ico" data-icon="users"></span>
+            <input class="picker-input" placeholder="Member…" aria-label="Member">
+            <button type="button" class="picker-clear" aria-label="Clear" data-icon="x"></button>
+            <ul class="picker-list" hidden role="listbox"></ul>
+          </div>
+          <div class="picker" id="pk-res-book">
+            <span class="picker-ico" data-icon="book"></span>
+            <input class="picker-input" placeholder="Book with no copies available…" aria-label="Book">
+            <button type="button" class="picker-clear" aria-label="Clear" data-icon="x"></button>
+            <ul class="picker-list" hidden role="listbox"></ul>
+          </div>
+          <button class="btn primary" type="submit"><span data-icon="bookmark"></span>Place reservation</button>
         </form>
-        <div id="books-table"></div>
-      </div>
-    </section>
-
-    <!-- MEMBERS -->
-    <section id="view-members" class="view">
-      <div class="card">
-        <form id="member-search" class="toolbar">
-          <input type="search" name="q" placeholder="Search by name, member ID, phone or email…" aria-label="Search members">
-          <label class="check"><input type="checkbox" name="active"> Active only</label>
-          <span class="spacer"></span>
-          <button type="button" class="btn primary" id="btn-add-member">+ Add member</button>
-        </form>
-        <div id="members-table"></div>
-      </div>
-    </section>
-
-    <!-- CIRCULATION -->
-    <section id="view-circulation" class="view">
-      <div class="card">
-        <div class="card-head"><h2>Issue a book</h2><span class="hint">Max 3 books per member · default loan 14 days</span></div>
-        <form id="issue-form" class="form-grid">
-          <label>Member<select name="memberId" required></select></label>
-          <label>Book<select name="bookId" required></select></label>
-          <label>Issue date<input type="date" name="issuedOn" required></label>
-          <label>Due date<input type="date" name="dueOn" required></label>
-          <div class="form-actions"><button class="btn primary" type="submit">Issue book</button></div>
-          <div id="issue-check" class="check-panel full"></div>
-        </form>
-      </div>
-      <div class="card">
-        <div class="card-head">
-          <h2>Books on loan</h2>
-          <select id="loan-filter" aria-label="Filter loans">
-            <option value="active">On loan</option>
-            <option value="overdue">Overdue</option>
-            <option value="returned">Returned</option>
-            <option value="all">All</option>
-          </select>
+        <div class="panel">
+          <div class="panel-head">
+            <div><h2>Queues</h2><p>First come, first served. A returned copy is held 2 days for the first person in line.</p></div>
+            <div class="segmented" id="res-filter">
+              <button data-v="open" class="on">Open</button>
+              <button data-v="ready">Ready</button>
+              <button data-v="waiting">Waiting</button>
+              <button data-v="closed">History</button>
+            </div>
+          </div>
+          <div id="res-list"></div>
         </div>
-        <div id="loans-table"></div>
-      </div>
-    </section>
+      </section>
 
-    <!-- RESERVATIONS -->
-    <section id="view-reservations" class="view">
-      <div class="card">
-        <div class="card-head"><h2>Reserve a book</h2><span class="hint">Only books with no available copy can be reserved</span></div>
-        <form id="reserve-form" class="form-grid">
-          <label>Member<select name="memberId" required></select></label>
-          <label>Book<select name="bookId" required></select></label>
-          <div class="form-actions"><button class="btn primary" type="submit">Place reservation</button></div>
-        </form>
-      </div>
-      <div class="card">
-        <div class="card-head">
-          <h2>Reservations</h2>
-          <select id="res-filter" aria-label="Filter reservations">
-            <option value="open">Open (waiting + ready)</option>
-            <option value="ready">Ready for pickup</option>
-            <option value="waiting">Waiting</option>
-            <option value="closed">Closed</option>
-            <option value="all">All</option>
-          </select>
+      <!-- BOOKS -->
+      <section class="view" id="view-books">
+        <div class="panel">
+          <div class="toolbar">
+            <div class="search"><span data-icon="search"></span><input id="book-q" type="search" placeholder="Search books…  (press / )" data-slash></div>
+            <div class="segmented" id="book-field">
+              <button data-v="all" class="on">All</button>
+              <button data-v="title">Title</button>
+              <button data-v="author">Author</button>
+              <button data-v="isbn">ISBN</button>
+              <button data-v="category">Category</button>
+            </div>
+            <label class="switch"><input type="checkbox" id="book-avail"><span class="track"></span>Available only</label>
+          </div>
+          <div class="chips" id="cat-chips"></div>
+          <div id="books-table"></div>
         </div>
-        <div id="res-table"></div>
-      </div>
-    </section>
-  </main>
+        <input type="file" id="import-file" accept=".csv,text/csv" hidden>
+      </section>
 
-  <dialog id="modal">
-    <form method="dialog" id="modal-form">
+      <!-- MEMBERS -->
+      <section class="view" id="view-members">
+        <div class="panel">
+          <div class="toolbar">
+            <div class="search"><span data-icon="search"></span><input id="member-q" type="search" placeholder="Search by name, member ID, phone or email…  (press / )" data-slash></div>
+            <div class="segmented" id="member-filter">
+              <button data-v="all" class="on">All</button>
+              <button data-v="active">Active</button>
+              <button data-v="inactive">Inactive</button>
+              <button data-v="fines">With fines</button>
+            </div>
+          </div>
+          <div id="members-table"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- DETAIL DRAWER -->
+<div class="drawer-scrim" id="drawer-scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <button class="icon-btn drawer-close" id="drawer-close" type="button" aria-label="Close" data-icon="x"></button>
+  <div id="drawer-body"></div>
+</aside>
+
+<!-- MODAL -->
+<dialog id="modal">
+  <form method="dialog" id="modal-form" autocomplete="off">
+    <div class="modal-head">
+      <span class="modal-ico" id="modal-ico"></span>
       <h2 id="modal-title"></h2>
-      <div id="modal-body"></div>
-      <p id="modal-error" class="error" role="alert"></p>
-      <div class="modal-actions">
-        <button type="button" class="btn" id="modal-cancel">Cancel</button>
-        <button type="submit" class="btn primary" id="modal-ok">Save</button>
-      </div>
-    </form>
-  </dialog>
+    </div>
+    <div id="modal-body"></div>
+    <p id="modal-error" class="form-error" role="alert"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost" id="modal-cancel">Cancel</button>
+      <button type="submit" class="btn primary" id="modal-ok">Save</button>
+    </div>
+  </form>
+</dialog>
 
-  <div id="toasts" aria-live="polite"></div>
-  <script src="app.js"></script>
+<div id="toasts" aria-live="polite"></div>
+<script src="app.js"></script>
 </body>
 </html>
