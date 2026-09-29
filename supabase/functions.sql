@@ -54,7 +54,8 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------- issue a book
-create or replace function issue_book(p_member bigint, p_book bigint, p_due date default null)
+drop function if exists issue_book(bigint, bigint, date);
+create or replace function issue_book(p_member bigint, p_book bigint, p_due date default null, p_issued date default current_date)
 returns issues language plpgsql as $$
 declare
   m members;
@@ -90,7 +91,9 @@ begin
     raise exception '% already has a copy of "%".', m.name, b.title;
   end if;
 
-  if p_due is not null and p_due < current_date then
+  p_issued := coalesce(p_issued, current_date);
+  if p_issued > current_date then raise exception 'Issue date cannot be in the future.'; end if;
+  if p_due is not null and p_due < p_issued then
     raise exception 'Due date cannot be before the issue date.';
   end if;
 
@@ -121,7 +124,7 @@ begin
   end if;
 
   insert into issues (book_id, member_id, issued_on, due_on)
-  values (b.id, m.id, current_date, coalesce(p_due, current_date + 14))
+  values (b.id, m.id, p_issued, coalesce(p_due, p_issued + 14))
   returning * into result;
   return result;
 end $$;
@@ -305,6 +308,6 @@ alter view v_pending_reservations set (security_invoker = true);
 alter view v_dashboard set (security_invoker = true);
 
 -- Only the server (service_role) may call the write functions — not the public anon key.
-revoke execute on function issue_book(bigint, bigint, date), return_book(bigint, date), renew_issue(bigint),
+revoke execute on function issue_book(bigint, bigint, date, date), return_book(bigint, date), renew_issue(bigint),
   reserve_book(bigint, bigint), cancel_reservation(bigint), pay_fines(bigint), delete_book(bigint),
   expire_holds(), _drain_queue(bigint), _copy_back(bigint) from public, anon, authenticated;

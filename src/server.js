@@ -14,14 +14,16 @@ export function createApp(lib) {
   app.use(express.static(path.join(here, '..', 'public')));
 
   // Wraps a handler so LibraryErrors become clean JSON errors with the right HTTP status.
-  const h = (fn, status = 200) => (req, res) => {
+  // Works for both the synchronous SQLite service and the async Supabase/Postgres service.
+  const fail = (res, err) => {
+    if (err instanceof LibraryError) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Unexpected server error. See the server log for details.' });
+  };
+  const h = (fn, status = 200) => async (req, res) => {
     try {
-      res.status(status).json(fn(req, res) ?? { ok: true });
-    } catch (err) {
-      if (err instanceof LibraryError) return res.status(err.status).json({ error: err.message });
-      console.error(err);
-      res.status(500).json({ error: 'Unexpected server error. See the server log for details.' });
-    }
+      res.status(status).json((await fn(req, res)) ?? { ok: true });
+    } catch (err) { fail(res, err); }
   };
 
   // Dashboard & analytics
@@ -30,20 +32,22 @@ export function createApp(lib) {
   app.get('/api/activity', h((req) => lib.recentActivity(Math.min(200, Number(req.query.limit) || 50))));
   app.get('/api/fines', h((req) => lib.listFines({ status: req.query.status || 'all' })));
 
-  const sendCsv = (res, name, headers, rows) => {
+  const sendCsv = async (res, name, headers, rowsPromise) => {
+    let rows;
+    try { rows = await rowsPromise; } catch (err) { return fail(res, err); }
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${name}-${lib.today()}.csv"`);
     res.send(`﻿${toCsv(headers, rows)}`);
   };
   app.get('/api/reports/books.csv', (req, res) => sendCsv(res, 'books',
     ['title', 'author', 'isbn', 'category', 'total_copies', 'available_copies', 'on_loan', 'held', 'waiting'],
-    lib.searchBooks({}).map((b) => [b.title, b.author, b.isbn, b.category, b.total_copies, b.available_copies, b.issued_copies, b.held_copies, b.queue_length])));
+    Promise.resolve(lib.searchBooks({})).then((list) => list.map((b) => [b.title, b.author, b.isbn, b.category, b.total_copies, b.available_copies, b.issued_copies, b.held_copies, b.queue_length]))));
   app.get('/api/reports/members.csv', (req, res) => sendCsv(res, 'members',
     ['Member ID', 'Name', 'Phone', 'Email', 'Join date', 'Status', 'Books on loan', 'Unpaid fines (INR)'],
-    lib.listMembers({}).map((m) => [m.member_code, m.name, m.phone, m.email, m.join_date, m.active ? 'Active' : 'Inactive', m.active_issues, m.unpaid_fines])));
+    Promise.resolve(lib.listMembers({})).then((list) => list.map((m) => [m.member_code, m.name, m.phone, m.email, m.join_date, m.active ? 'Active' : 'Inactive', m.active_issues, m.unpaid_fines]))));
   app.get('/api/reports/fines.csv', (req, res) => sendCsv(res, 'fines',
     ['Member ID', 'Member name', 'Book title', 'Due on', 'Returned on', 'Fine (INR)', 'Status', 'Paid on'],
-    lib.listFines({}).rows.map((r) => [r.member_code, r.member_name, r.title, r.due_on, r.returned_on, r.fine, r.fine_paid ? 'Paid' : 'Unpaid', r.paid_on])));
+    Promise.resolve(lib.listFines({})).then((f) => f.rows.map((r) => [r.member_code, r.member_name, r.title, r.due_on, r.returned_on, r.fine, r.fine_paid ? 'Paid' : 'Unpaid', r.paid_on]))));
   app.get('/api/reports/books-template.csv', (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="books-import-template.csv"');
@@ -85,15 +89,10 @@ export function createApp(lib) {
   app.post('/api/reservations/:id/cancel', h((req) => lib.cancelReservation(req.params.id)));
 
   // Overdue list export (CSV)
-  app.get('/api/reports/overdue.csv', (req, res) => {
-    const rows = lib.listIssues({ status: 'overdue' });
-    const csv = toCsv(
-      ['Member ID', 'Member name', 'Phone', 'Email', 'Book title', 'ISBN', 'Issued on', 'Due on', 'Days overdue', 'Fine (INR)'],
-      rows.map((r) => [r.member_code, r.member_name, r.phone, r.email, r.title, r.isbn, r.issued_on, r.due_on, r.days_overdue, r.accrued_fine]));
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="overdue-${lib.today()}.csv"`);
-    res.send(`﻿${csv}`); // BOM so Excel opens UTF-8 correctly
-  });
+  app.get('/api/reports/overdue.csv', (req, res) => sendCsv(res, 'overdue',
+    ['Member ID', 'Member name', 'Phone', 'Email', 'Book title', 'ISBN', 'Issued on', 'Due on', 'Days overdue', 'Fine (INR)'],
+    Promise.resolve(lib.listIssues({ status: 'overdue' })).then((list) => list.map((r) =>
+      [r.member_code, r.member_name, r.phone, r.email, r.title, r.isbn, r.issued_on, r.due_on, r.days_overdue, r.accrued_fine]))));
 
   app.use('/api', (req, res) => res.status(404).json({ error: `No API route for ${req.method} ${req.originalUrl}` }));
   // Malformed JSON bodies and other middleware errors -> JSON
@@ -104,13 +103,25 @@ export function createApp(lib) {
 }
 
 // ---------------------------------------------------------------- default app
-// On Vercel the app runs as a serverless function: the project folder is read-only, so the
-// database lives in /tmp (writable, but temporary) and is filled with demo data when empty.
+// Database choice:
+//  • DATABASE_URL set  -> Supabase / PostgreSQL (permanent storage; run the supabase/*.sql scripts first)
+//  • otherwise         -> SQLite file. On Vercel the project folder is read-only, so the SQLite file lives
+//                         in /tmp (temporary) and is filled with demo data when empty.
 const onVercel = !!process.env.VERCEL;
-const dbFile = process.env.DB_FILE || (onVercel ? '/tmp/library.db' : path.join(here, '..', 'data', 'library.db'));
-const db = openDb(dbFile);
-if (onVercel || process.env.SEED_DEMO === '1') seedDemo(db);
-const app = createApp(new Library(db));
+let lib;
+let dbLabel;
+if (process.env.DATABASE_URL) {
+  const { PgLibrary } = await import('./pg-library.js');
+  lib = new PgLibrary(process.env.DATABASE_URL.trim());
+  dbLabel = 'PostgreSQL (DATABASE_URL)';
+} else {
+  const dbFile = process.env.DB_FILE || (onVercel ? '/tmp/library.db' : path.join(here, '..', 'data', 'library.db'));
+  const db = openDb(dbFile);
+  if (onVercel || process.env.SEED_DEMO === '1') seedDemo(db);
+  lib = new Library(db);
+  dbLabel = dbFile;
+}
+const app = createApp(lib);
 export default app;
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
@@ -118,6 +129,6 @@ if (isMain && !onVercel) {
   const port = Number(process.env.PORT) || 3000;
   app.listen(port, () => {
     console.log(`Library Management System running at http://localhost:${port}`);
-    console.log(`Database: ${dbFile}`);
+    console.log(`Database: ${dbLabel}`);
   });
 }

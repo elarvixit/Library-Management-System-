@@ -43,7 +43,7 @@ export function addDays(date, n) {
 export function daysBetween(from, to) {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
-function parseDate(value, field) {
+export function parseDate(value, field) {
   const s = typeof value === 'string' ? value.trim() : value;
   if (typeof s !== 'string' || !DATE_RE.test(s) || Number.isNaN(Date.parse(`${s}T00:00:00Z`)) || addDays(s, 0) !== s) {
     throw new LibraryError(`${field} must be a valid date in YYYY-MM-DD format.`);
@@ -57,18 +57,18 @@ export function computeFine(dueOn, returnedOn) {
 }
 
 // ---------------------------------------------------------------- input validation helpers
-function requiredText(value, field, max = 200) {
+export function requiredText(value, field, max = 200) {
   const s = String(value ?? '').trim();
   if (!s) throw new LibraryError(`${field} is required.`);
   if (s.length > max) throw new LibraryError(`${field} must be at most ${max} characters.`);
   return s;
 }
-function optionalText(value, max = 200) {
+export function optionalText(value, max = 200) {
   const s = String(value ?? '').trim();
   if (s.length > max) throw new LibraryError(`Value "${s.slice(0, 20)}…" is too long.`);
   return s;
 }
-function positiveInt(value, field, min = 1) {
+export function positiveInt(value, field, min = 1) {
   const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
   if (!Number.isInteger(n) || n < min) throw new LibraryError(`${field} must be a whole number of at least ${min}.`);
   if (n > 100000) throw new LibraryError(`${field} is unrealistically large.`);
@@ -87,18 +87,18 @@ export function normalizeIsbn(raw) {
   }
   return s;
 }
-function validEmail(value) {
+export function validEmail(value) {
   const s = optionalText(value, 120).toLowerCase();
   if (s && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) throw new LibraryError(`Email "${s}" is not a valid email address.`);
   return s;
 }
-function validPhone(value) {
+export function validPhone(value) {
   const s = optionalText(value, 30);
   if (s && !/^\+?[\d\s()-]{7,20}$/.test(s)) throw new LibraryError(`Phone "${s}" is not a valid phone number.`);
   if (s && s.replace(/\D/g, '').length < 7) throw new LibraryError(`Phone "${s}" needs at least 7 digits.`);
   return s;
 }
-const bool = (v) => v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
+export const bool = (v) => v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const rupees = (n) => `₹${n}`;
 

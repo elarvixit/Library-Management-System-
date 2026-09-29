@@ -176,3 +176,16 @@ The `supabase/` folder contains the same data model and business rules for Supab
 **Setup:** in the Supabase dashboard open **SQL Editor → New query**, then paste and **Run** `schema.sql`, `functions.sql` and `seed.sql`, in that order. Only the server should call the write functions, using the `service_role` key or the database connection string. Never put that key in browser code.
 
 All four scripts were tested against PostgreSQL (PGlite): the queue order, the 3-book limit, fines blocking issues, the ₹5/day fine, 2-day hold expiry passing the copy on, and delete refusal.
+
+### Connecting the app to Supabase
+
+When the `DATABASE_URL` environment variable is set, the server uses PostgreSQL (`src/pg-library.js`) instead of SQLite, and the data is stored permanently. The API and the UI are unchanged.
+
+1. In Supabase, open **SQL Editor** and run `supabase/schema.sql`, `supabase/functions.sql` and `supabase/seed.sql` (the seed is optional).
+2. In Supabase, click **Connect** and copy the **Transaction pooler** URI (port 6543). Replace `[YOUR-PASSWORD]` with your database password.
+3. In Vercel, go to **Settings → Environment Variables** and add:
+   - `DATABASE_URL` as a **Secret**, with the URI from step 2
+   - optionally `LIBRARY_TIMEZONE` (default `Asia/Kolkata`)
+4. Redeploy. Environment variable changes only apply to new deployments.
+
+Locally, `DATABASE_URL="postgresql://…" npm start` does the same.
