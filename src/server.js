@@ -26,6 +26,16 @@ export function createApp(lib) {
     } catch (err) { fail(res, err); }
   };
 
+  // The staff member on duty (chosen in the app's top bar) is sent with every request and
+  // recorded on issues, returns, fine collections and reservations.
+  const staffId = (req) => req.get('X-Staff-Id') || undefined;
+
+  // Staff
+  app.get('/api/staff', h(() => lib.listStaff()));
+  app.get('/api/staff/:id', h((req) => lib.getStaff(req.params.id)));
+  app.post('/api/staff', h((req) => lib.addStaff(req.body ?? {}), 201));
+  app.put('/api/staff/:id', h((req) => lib.updateStaff(req.params.id, req.body ?? {})));
+
   // Dashboard & analytics
   app.get('/api/dashboard', h(() => lib.dashboard()));
   app.get('/api/stats', h((req) => lib.stats({ days: Math.min(90, Math.max(7, Number(req.query.days) || 14)) })));
@@ -75,17 +85,17 @@ export function createApp(lib) {
   app.get('/api/members/:id', h((req) => lib.memberDetails(req.params.id)));
   app.post('/api/members', h((req) => lib.addMember(req.body ?? {}), 201));
   app.put('/api/members/:id', h((req) => lib.updateMember(req.params.id, req.body ?? {})));
-  app.post('/api/members/:id/pay-fine', h((req) => lib.payFines(req.params.id)));
+  app.post('/api/members/:id/pay-fine', h((req) => lib.payFines(req.params.id, { staffId: staffId(req) })));
 
   // Issues & returns
   app.get('/api/issues', h((req) => lib.listIssues({ status: req.query.status || 'active' })));
-  app.post('/api/issues', h((req) => lib.issueBook(req.body ?? {}), 201));
-  app.post('/api/issues/:id/return', h((req) => lib.returnBook(req.params.id, req.body ?? {})));
+  app.post('/api/issues', h((req) => lib.issueBook({ ...(req.body ?? {}), staffId: staffId(req) }), 201));
+  app.post('/api/issues/:id/return', h((req) => lib.returnBook(req.params.id, { ...(req.body ?? {}), staffId: staffId(req) })));
   app.post('/api/issues/:id/renew', h((req) => lib.renewIssue(req.params.id)));
 
   // Reservations
   app.get('/api/reservations', h((req) => lib.listReservations({ status: req.query.status || 'open' })));
-  app.post('/api/reservations', h((req) => lib.reserveBook(req.body ?? {}), 201));
+  app.post('/api/reservations', h((req) => lib.reserveBook({ ...(req.body ?? {}), staffId: staffId(req) }), 201));
   app.post('/api/reservations/:id/cancel', h((req) => lib.cancelReservation(req.params.id)));
 
   // Overdue list export (CSV)

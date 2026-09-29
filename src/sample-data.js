@@ -61,6 +61,16 @@ export const SAMPLE_MEMBERS = [
 
 export const emailFor = (name) => `${name.toLowerCase().replace(/[^a-z ]/g, '').trim().replace(/\s+/g, '.')}@example.com`;
 
+// Library staff (S001 Elarvix, Admin, is created automatically).
+// [name, role, shift, email, phone, days since joining, active]
+export const SAMPLE_STAFF = [
+  ['Kavitha Rao', 'Librarian', 'Morning', 'kavitha.rao@library.example', '9845100001', 900, true],
+  ['Rakesh Menon', 'Librarian', 'Evening', 'rakesh.menon@library.example', '9845100002', 640, true],
+  ['Anita Desai', 'Assistant', 'Morning', 'anita.desai@library.example', '9845100003', 300, true],
+  ['Sameer Khan', 'Assistant', 'Evening', 'sameer.khan@library.example', '9845100004', 120, true],
+  ['Lalitha Iyer', 'Assistant', 'Full day', 'lalitha.iyer@library.example', '9845100005', 1200, false],
+];
+
 // [title, author, isbn, category, total copies]
 export const SAMPLE_BOOKS = [
   ['The Hobbit', 'J.R.R. Tolkien', '9780261102217', 'Fantasy', 3],

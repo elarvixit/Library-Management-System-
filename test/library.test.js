@@ -430,6 +430,51 @@ describe('fines ledger & stats', () => {
   });
 });
 
+describe('staff', () => {
+  test('a default Admin exists; staff get auto IDs and are validated', () => {
+    const [admin] = lib.listStaff();
+    assert.equal(admin.role, 'Admin');
+    assert.equal(admin.staff_code, 'S001');
+    const s = lib.addStaff({ name: 'Kavitha Rao', role: 'Librarian', shift: 'Morning', email: 'kavitha@example.com' });
+    assert.equal(s.staff_code, 'S002');
+    rejects(() => lib.addStaff({ name: 'X', role: 'Boss' }), /Role must be one of/);
+    rejects(() => lib.addStaff({ name: 'X', shift: 'Night' }), /Shift must be one of/);
+    rejects(() => lib.addStaff({ name: 'X', staff_code: 's002' }), /already in use/);
+    rejects(() => lib.addStaff({ name: '' }), /Name is required/);
+  });
+
+  test('actions record which staff member performed them', () => {
+    const lib1 = lib.addStaff({ name: 'Kavitha Rao', role: 'Librarian' });
+    const asst = lib.addStaff({ name: 'Rakesh Kumar', role: 'Assistant' });
+    const m = member('Asha');
+    const i = issue(m, book(1), { staffId: lib1.id });
+    assert.equal(i.issued_by, lib1.id);
+    assert.equal(i.issued_by_name, 'Kavitha Rao');
+    advance(16);
+    const r = lib.returnBook(i.id, { staffId: asst.id });
+    assert.equal(r.returned_by_name, 'Rakesh Kumar');
+    lib.payFines(m.id, { staffId: lib1.id });
+    const acts = lib.recentActivity(10);
+    assert.deepEqual(acts.filter((e) => e.type !== 'reserved').map((e) => [e.type, e.staff_name]),
+      [['fine_paid', 'Kavitha Rao'], ['returned', 'Rakesh Kumar'], ['issued', 'Kavitha Rao']]);
+    const k = lib.getStaff(lib1.id);
+    assert.equal(k.staff.issued_total, 1);
+    assert.equal(k.staff.fines_collected, 10);
+    assert.equal(k.recent.length, 2);
+  });
+
+  test('inactive staff cannot act; the last active Admin cannot be demoted or deactivated', () => {
+    const [admin] = lib.listStaff();
+    const s = lib.addStaff({ name: 'Old Hand', role: 'Assistant', active: false });
+    rejects(() => issue(member(), book(), { staffId: s.id }), /inactive and cannot perform/);
+    rejects(() => lib.updateStaff(admin.id, { role: 'Librarian' }), /at least one active Admin/);
+    rejects(() => lib.updateStaff(admin.id, { active: false }), /at least one active Admin/);
+    const second = lib.addStaff({ name: 'New Admin', role: 'Admin' });
+    assert.equal(lib.updateStaff(admin.id, { role: 'Librarian' }).role, 'Librarian');
+    rejects(() => lib.updateStaff(second.id, { active: false }), /at least one active Admin/);
+  });
+});
+
 describe('CSV', () => {
   test('parses quoted fields and header aliases', () => {
     const rows = parseBooksCsv('﻿Title,Author,ISBN,Category,Copies\r\n"Hello, World","O\'Neil ""Jr""",9780000000017,Tech,2\r\n\r\n');

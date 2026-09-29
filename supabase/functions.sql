@@ -53,9 +53,23 @@ begin
   return n;
 end $$;
 
+-- Staff recorded on an action: null is allowed; if given it must be active staff.
+create or replace function _check_staff(p_staff bigint) returns bigint
+language plpgsql as $$
+declare
+  s staff;
+begin
+  if p_staff is null then return null; end if;
+  select * into s from staff where id = p_staff;
+  if not found then raise exception 'Staff member not found.'; end if;
+  if not s.active then raise exception '% is inactive and cannot perform library actions. Choose another staff member on duty.', s.name; end if;
+  return s.id;
+end $$;
+
 -- ---------------------------------------------------------------- issue a book
 drop function if exists issue_book(bigint, bigint, date);
-create or replace function issue_book(p_member bigint, p_book bigint, p_due date default null, p_issued date default current_date)
+drop function if exists issue_book(bigint, bigint, date, date);
+create or replace function issue_book(p_member bigint, p_book bigint, p_due date default null, p_issued date default current_date, p_staff bigint default null)
 returns issues language plpgsql as $$
 declare
   m members;
@@ -74,6 +88,7 @@ begin
   if not found then raise exception 'Member not found.'; end if;
   select * into b from books where id = p_book and not deleted for update;
   if not found then raise exception 'Book not found.'; end if;
+  perform _check_staff(p_staff);
 
   if not m.active then raise exception '% is inactive and cannot borrow books.', m.name; end if;
 
@@ -123,14 +138,15 @@ begin
     update books set available_copies = available_copies - 1 where id = b.id;
   end if;
 
-  insert into issues (book_id, member_id, issued_on, due_on)
-  values (b.id, m.id, p_issued, coalesce(p_due, p_issued + 14))
+  insert into issues (book_id, member_id, issued_on, due_on, issued_by)
+  values (b.id, m.id, p_issued, coalesce(p_due, p_issued + 14), p_staff)
   returning * into result;
   return result;
 end $$;
 
 -- ---------------------------------------------------------------- return a book
-create or replace function return_book(p_issue bigint, p_returned date default current_date)
+drop function if exists return_book(bigint, date);
+create or replace function return_book(p_issue bigint, p_returned date default current_date, p_staff bigint default null)
 returns issues language plpgsql as $$
 declare
   i issues;
@@ -140,12 +156,13 @@ begin
   perform expire_holds();
   select * into i from issues where id = p_issue for update;
   if not found then raise exception 'Issue record not found.'; end if;
+  perform _check_staff(p_staff);
   if i.returned_on is not null then raise exception 'This book was already returned on %.', i.returned_on; end if;
   if p_returned > current_date then raise exception 'Return date cannot be in the future.'; end if;
   if p_returned < i.issued_on then raise exception 'Return date cannot be before the issue date (%).', i.issued_on; end if;
 
   days_late := greatest(0, p_returned - i.due_on);   -- returning on the due date is not late
-  update issues set returned_on = p_returned, fine = days_late * 5 where id = i.id returning * into result;
+  update issues set returned_on = p_returned, fine = days_late * 5, returned_by = p_staff where id = i.id returning * into result;
   perform _copy_back(i.book_id);                     -- goes to the first person in the queue, if any
   return result;
 end $$;
@@ -174,7 +191,8 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------- reservations
-create or replace function reserve_book(p_member bigint, p_book bigint) returns reservations
+drop function if exists reserve_book(bigint, bigint);
+create or replace function reserve_book(p_member bigint, p_book bigint, p_staff bigint default null) returns reservations
 language plpgsql as $$
 declare
   m members;
@@ -186,6 +204,7 @@ begin
   if not found then raise exception 'Member not found.'; end if;
   select * into b from books where id = p_book and not deleted for update;
   if not found then raise exception 'Book not found.'; end if;
+  perform _check_staff(p_staff);
   if not m.active then raise exception '% is inactive and cannot reserve books.', m.name; end if;
   if exists (select 1 from reservations where book_id = b.id and member_id = m.id and status in ('waiting', 'ready')) then
     raise exception '% already has a reservation for "%".', m.name, b.title;
@@ -196,7 +215,7 @@ begin
   if b.available_copies > 0 then
     raise exception '"%" has % available — issue it directly instead of reserving.', b.title, b.available_copies;
   end if;
-  insert into reservations (book_id, member_id) values (b.id, m.id) returning * into result;
+  insert into reservations (book_id, member_id, created_by) values (b.id, m.id, p_staff) returning * into result;
   return result;
 end $$;
 
@@ -215,14 +234,16 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------- fines
-create or replace function pay_fines(p_member bigint) returns integer
+drop function if exists pay_fines(bigint);
+create or replace function pay_fines(p_member bigint, p_staff bigint default null) returns integer
 language plpgsql as $$
 declare
   amount integer;
 begin
+  perform _check_staff(p_staff);
   select coalesce(sum(fine), 0) into amount from issues where member_id = p_member and fine > 0 and not fine_paid;
   if amount = 0 then raise exception 'This member has no unpaid fines.'; end if;
-  update issues set fine_paid = true, paid_on = current_date where member_id = p_member and fine > 0 and not fine_paid;
+  update issues set fine_paid = true, paid_on = current_date, paid_by = p_staff where member_id = p_member and fine > 0 and not fine_paid;
   return amount;
 end $$;
 
@@ -298,7 +319,17 @@ select (select count(*) from issues where issued_on = current_date)             
        (select coalesce(sum(total_copies), 0) from books where not deleted)                           as copies,
        (select count(*) from members where active)                                                    as active_members;
 
+create or replace view v_staff as
+select s.*,
+       (select count(*) from issues i where i.issued_by = s.id)                                     as issued_total,
+       (select count(*) from issues i where i.returned_by = s.id)                                   as returned_total,
+       (select coalesce(sum(fine), 0) from issues i where i.paid_by = s.id)                         as fines_collected,
+       (select count(*) from issues i where i.issued_by = s.id and i.issued_on = current_date)      as issued_today,
+       (select count(*) from issues i where i.returned_by = s.id and i.returned_on = current_date)  as returned_today
+  from staff s;
+
 -- Views run with the caller's permissions, so RLS on the tables still protects them.
+alter view v_staff set (security_invoker = true);
 alter view v_books set (security_invoker = true);
 alter view v_members set (security_invoker = true);
 alter view v_overdue set (security_invoker = true);
@@ -308,6 +339,6 @@ alter view v_pending_reservations set (security_invoker = true);
 alter view v_dashboard set (security_invoker = true);
 
 -- Only the server (service_role) may call the write functions — not the public anon key.
-revoke execute on function issue_book(bigint, bigint, date, date), return_book(bigint, date), renew_issue(bigint),
-  reserve_book(bigint, bigint), cancel_reservation(bigint), pay_fines(bigint), delete_book(bigint),
-  expire_holds(), _drain_queue(bigint), _copy_back(bigint) from public, anon, authenticated;
+revoke execute on function issue_book(bigint, bigint, date, date, bigint), return_book(bigint, date, bigint), renew_issue(bigint),
+  reserve_book(bigint, bigint, bigint), cancel_reservation(bigint), pay_fines(bigint, bigint), delete_book(bigint),
+  expire_holds(), _drain_queue(bigint), _copy_back(bigint), _check_staff(bigint) from public, anon, authenticated;

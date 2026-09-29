@@ -65,7 +65,30 @@ CREATE INDEX IF NOT EXISTS ix_res_book ON reservations(book_id, status);
 -- A member can have at most one open reservation per book.
 CREATE UNIQUE INDEX IF NOT EXISTS ux_res_open ON reservations(book_id, member_id)
   WHERE status IN ('waiting', 'ready');
+
+-- Library staff. Every issue, return, fine collection and reservation records which
+-- staff member (the one "on duty" in the app) performed it.
+CREATE TABLE IF NOT EXISTS staff (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  staff_code TEXT    NOT NULL UNIQUE,               -- e.g. S001
+  name       TEXT    NOT NULL,
+  role       TEXT    NOT NULL DEFAULT 'Librarian' CHECK (role IN ('Admin', 'Librarian', 'Assistant')),
+  email      TEXT    NOT NULL DEFAULT '',
+  phone      TEXT    NOT NULL DEFAULT '',
+  shift      TEXT    NOT NULL DEFAULT 'Full day' CHECK (shift IN ('Morning', 'Evening', 'Full day')),
+  join_date  TEXT    NOT NULL,
+  active     INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+);
 `;
+
+// Columns added after the first version: [table, column, definition]
+const MIGRATIONS = [
+  ['issues', 'renewals', 'INTEGER NOT NULL DEFAULT 0'],
+  ['issues', 'issued_by', 'INTEGER REFERENCES staff(id)'],
+  ['issues', 'returned_by', 'INTEGER REFERENCES staff(id)'],
+  ['issues', 'paid_by', 'INTEGER REFERENCES staff(id)'],
+  ['reservations', 'created_by', 'INTEGER REFERENCES staff(id)'],
+];
 
 export function openDb(file = ':memory:') {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -74,7 +97,13 @@ export function openDb(file = ':memory:') {
   if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
   // Migrations for databases created by earlier versions.
-  const issueCols = db.prepare('PRAGMA table_info(issues)').all().map((c) => c.name);
-  if (!issueCols.includes('renewals')) db.exec('ALTER TABLE issues ADD COLUMN renewals INTEGER NOT NULL DEFAULT 0');
+  for (const [table, column, def] of MIGRATIONS) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+  }
+  // Every library needs at least one administrator.
+  if (!db.prepare('SELECT COUNT(*) AS c FROM staff').get().c) {
+    db.prepare("INSERT INTO staff (staff_code, name, role, email, shift, join_date) VALUES ('S001', 'Elarvix', 'Admin', '', 'Full day', date('now', 'localtime'))").run();
+  }
   return db;
 }

@@ -189,3 +189,18 @@ When the `DATABASE_URL` environment variable is set, the server uses PostgreSQL 
 4. Redeploy. Environment variable changes only apply to new deployments.
 
 Locally, `DATABASE_URL="postgresql://…" npm start` does the same.
+
+## Library Staff
+
+The **Library Staff** page (under *Administration*) lists everyone who works at the library: staff ID, name, role (**Admin**, **Librarian** or **Assistant**), shift, phone, email, join date and status. It also shows each person's activity today and in total (books issued, returns taken, fines collected), and a profile panel lists their recent actions.
+
+- **Staff on duty:** the top bar shows who is at the desk. Click it to switch. The chosen staff member is sent with every request (`X-Staff-Id` header) and stored on the record:
+  - `issues.issued_by`, `issues.returned_by` and `issues.paid_by`
+  - `reservations.created_by`
+
+  Their name appears in the Activity feed, the loans list and on printed slips.
+- **Rules:**
+  - An inactive staff member cannot perform actions.
+  - The library must always keep **at least one active Admin**. This is checked by the API and, on Supabase, also by a database trigger.
+- **API:** `GET /api/staff`, `GET /api/staff/:id` (details and recent actions), `POST /api/staff`, `PUT /api/staff/:id`.
+- **Database:** a `staff` table in both SQLite and Supabase, plus a `v_staff` view on Supabase with activity counts. `S001 Elarvix (Admin)` is created automatically.

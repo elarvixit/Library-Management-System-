@@ -1,8 +1,8 @@
 -- =====================================================================
 -- Library Management System — ONE-SHOT SUPABASE SETUP
 -- Paste this whole file into Supabase → SQL Editor → New query → Run.
--- It creates the tables, the business-rule functions and views, and loads demo data.
--- WARNING: it DROPS and recreates the library tables (books, members, issues, reservations).
+-- It creates the tables (incl. staff), the business-rule functions and views, and loads demo data.
+-- WARNING: it DROPS and recreates the library tables (books, members, issues, reservations, staff).
 -- =====================================================================
 
 -- =====================================================================
@@ -12,6 +12,7 @@
 -- =====================================================================
 
 drop table if exists reservations cascade;
+drop table if exists staff cascade;
 drop table if exists issues cascade;
 drop table if exists members cascade;
 drop table if exists books cascade;
@@ -54,6 +55,34 @@ create table members (
 create index ix_members_name on members (lower(name));
 
 -- ---------------------------------------------------------------------
+-- staff: who works at the library. Every issue, return, fine collection and
+-- reservation records the staff member on duty who performed it.
+-- ---------------------------------------------------------------------
+create table staff (
+  id         bigint generated always as identity primary key,
+  staff_code text    not null unique,                     -- e.g. S001
+  name       text    not null check (length(trim(name)) > 0),
+  role       text    not null default 'Librarian' check (role in ('Admin', 'Librarian', 'Assistant')),
+  email      text    not null default '' check (email = '' or email ~* '^[^\s@]+@[^\s@]+\.[^\s@]+$'),
+  phone      text    not null default '',
+  shift      text    not null default 'Full day' check (shift in ('Morning', 'Evening', 'Full day')),
+  join_date  date    not null default current_date,
+  active     boolean not null default true
+);
+insert into staff (staff_code, name, role, shift) values ('S001', 'Elarvix', 'Admin', 'Full day');
+
+-- The library must always keep at least one active Admin.
+create or replace function _keep_one_admin() returns trigger language plpgsql as $$
+begin
+  if not exists (select 1 from staff where role = 'Admin' and active) then
+    raise exception 'The library must keep at least one active Admin. Make another staff member an Admin first.';
+  end if;
+  return null;
+end $$;
+create constraint trigger trg_keep_one_admin after update or delete on staff
+  deferrable initially deferred for each row execute function _keep_one_admin();
+
+-- ---------------------------------------------------------------------
 -- issues (loans)
 -- fine is set when the book is returned: ₹5 × days late. fine_paid clears it.
 -- ---------------------------------------------------------------------
@@ -68,6 +97,9 @@ create table issues (
   fine_paid   boolean not null default false,
   paid_on     date,
   renewals    integer not null default 0 check (renewals between 0 and 2),
+  issued_by   bigint references staff (id),   -- staff on duty who issued the book
+  returned_by bigint references staff (id),   -- ... who received the return
+  paid_by     bigint references staff (id),   -- ... who collected the fine
   check (due_on >= issued_on),
   check (returned_on is null or returned_on >= issued_on)
 );
@@ -96,6 +128,7 @@ create table reservations (
   ready_on    date,
   hold_until  date,
   closed_on   date,
+  created_by  bigint references staff (id),   -- staff on duty who placed the reservation
   check (status <> 'ready' or hold_until is not null)
 );
 create index ix_res_book on reservations (book_id, status);
@@ -112,6 +145,7 @@ alter table books        enable row level security;
 alter table members      enable row level security;
 alter table issues       enable row level security;
 alter table reservations enable row level security;
+alter table staff        enable row level security;
 
 
 -- =====================================================================
@@ -169,9 +203,23 @@ begin
   return n;
 end $$;
 
+-- Staff recorded on an action: null is allowed; if given it must be active staff.
+create or replace function _check_staff(p_staff bigint) returns bigint
+language plpgsql as $$
+declare
+  s staff;
+begin
+  if p_staff is null then return null; end if;
+  select * into s from staff where id = p_staff;
+  if not found then raise exception 'Staff member not found.'; end if;
+  if not s.active then raise exception '% is inactive and cannot perform library actions. Choose another staff member on duty.', s.name; end if;
+  return s.id;
+end $$;
+
 -- ---------------------------------------------------------------- issue a book
 drop function if exists issue_book(bigint, bigint, date);
-create or replace function issue_book(p_member bigint, p_book bigint, p_due date default null, p_issued date default current_date)
+drop function if exists issue_book(bigint, bigint, date, date);
+create or replace function issue_book(p_member bigint, p_book bigint, p_due date default null, p_issued date default current_date, p_staff bigint default null)
 returns issues language plpgsql as $$
 declare
   m members;
@@ -190,6 +238,7 @@ begin
   if not found then raise exception 'Member not found.'; end if;
   select * into b from books where id = p_book and not deleted for update;
   if not found then raise exception 'Book not found.'; end if;
+  perform _check_staff(p_staff);
 
   if not m.active then raise exception '% is inactive and cannot borrow books.', m.name; end if;
 
@@ -239,14 +288,15 @@ begin
     update books set available_copies = available_copies - 1 where id = b.id;
   end if;
 
-  insert into issues (book_id, member_id, issued_on, due_on)
-  values (b.id, m.id, p_issued, coalesce(p_due, p_issued + 14))
+  insert into issues (book_id, member_id, issued_on, due_on, issued_by)
+  values (b.id, m.id, p_issued, coalesce(p_due, p_issued + 14), p_staff)
   returning * into result;
   return result;
 end $$;
 
 -- ---------------------------------------------------------------- return a book
-create or replace function return_book(p_issue bigint, p_returned date default current_date)
+drop function if exists return_book(bigint, date);
+create or replace function return_book(p_issue bigint, p_returned date default current_date, p_staff bigint default null)
 returns issues language plpgsql as $$
 declare
   i issues;
@@ -256,12 +306,13 @@ begin
   perform expire_holds();
   select * into i from issues where id = p_issue for update;
   if not found then raise exception 'Issue record not found.'; end if;
+  perform _check_staff(p_staff);
   if i.returned_on is not null then raise exception 'This book was already returned on %.', i.returned_on; end if;
   if p_returned > current_date then raise exception 'Return date cannot be in the future.'; end if;
   if p_returned < i.issued_on then raise exception 'Return date cannot be before the issue date (%).', i.issued_on; end if;
 
   days_late := greatest(0, p_returned - i.due_on);   -- returning on the due date is not late
-  update issues set returned_on = p_returned, fine = days_late * 5 where id = i.id returning * into result;
+  update issues set returned_on = p_returned, fine = days_late * 5, returned_by = p_staff where id = i.id returning * into result;
   perform _copy_back(i.book_id);                     -- goes to the first person in the queue, if any
   return result;
 end $$;
@@ -290,7 +341,8 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------- reservations
-create or replace function reserve_book(p_member bigint, p_book bigint) returns reservations
+drop function if exists reserve_book(bigint, bigint);
+create or replace function reserve_book(p_member bigint, p_book bigint, p_staff bigint default null) returns reservations
 language plpgsql as $$
 declare
   m members;
@@ -302,6 +354,7 @@ begin
   if not found then raise exception 'Member not found.'; end if;
   select * into b from books where id = p_book and not deleted for update;
   if not found then raise exception 'Book not found.'; end if;
+  perform _check_staff(p_staff);
   if not m.active then raise exception '% is inactive and cannot reserve books.', m.name; end if;
   if exists (select 1 from reservations where book_id = b.id and member_id = m.id and status in ('waiting', 'ready')) then
     raise exception '% already has a reservation for "%".', m.name, b.title;
@@ -312,7 +365,7 @@ begin
   if b.available_copies > 0 then
     raise exception '"%" has % available — issue it directly instead of reserving.', b.title, b.available_copies;
   end if;
-  insert into reservations (book_id, member_id) values (b.id, m.id) returning * into result;
+  insert into reservations (book_id, member_id, created_by) values (b.id, m.id, p_staff) returning * into result;
   return result;
 end $$;
 
@@ -331,14 +384,16 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------- fines
-create or replace function pay_fines(p_member bigint) returns integer
+drop function if exists pay_fines(bigint);
+create or replace function pay_fines(p_member bigint, p_staff bigint default null) returns integer
 language plpgsql as $$
 declare
   amount integer;
 begin
+  perform _check_staff(p_staff);
   select coalesce(sum(fine), 0) into amount from issues where member_id = p_member and fine > 0 and not fine_paid;
   if amount = 0 then raise exception 'This member has no unpaid fines.'; end if;
-  update issues set fine_paid = true, paid_on = current_date where member_id = p_member and fine > 0 and not fine_paid;
+  update issues set fine_paid = true, paid_on = current_date, paid_by = p_staff where member_id = p_member and fine > 0 and not fine_paid;
   return amount;
 end $$;
 
@@ -414,7 +469,17 @@ select (select count(*) from issues where issued_on = current_date)             
        (select coalesce(sum(total_copies), 0) from books where not deleted)                           as copies,
        (select count(*) from members where active)                                                    as active_members;
 
+create or replace view v_staff as
+select s.*,
+       (select count(*) from issues i where i.issued_by = s.id)                                     as issued_total,
+       (select count(*) from issues i where i.returned_by = s.id)                                   as returned_total,
+       (select coalesce(sum(fine), 0) from issues i where i.paid_by = s.id)                         as fines_collected,
+       (select count(*) from issues i where i.issued_by = s.id and i.issued_on = current_date)      as issued_today,
+       (select count(*) from issues i where i.returned_by = s.id and i.returned_on = current_date)  as returned_today
+  from staff s;
+
 -- Views run with the caller's permissions, so RLS on the tables still protects them.
+alter view v_staff set (security_invoker = true);
 alter view v_books set (security_invoker = true);
 alter view v_members set (security_invoker = true);
 alter view v_overdue set (security_invoker = true);
@@ -424,9 +489,9 @@ alter view v_pending_reservations set (security_invoker = true);
 alter view v_dashboard set (security_invoker = true);
 
 -- Only the server (service_role) may call the write functions — not the public anon key.
-revoke execute on function issue_book(bigint, bigint, date, date), return_book(bigint, date), renew_issue(bigint),
-  reserve_book(bigint, bigint), cancel_reservation(bigint), pay_fines(bigint), delete_book(bigint),
-  expire_holds(), _drain_queue(bigint), _copy_back(bigint) from public, anon, authenticated;
+revoke execute on function issue_book(bigint, bigint, date, date, bigint), return_book(bigint, date, bigint), renew_issue(bigint),
+  reserve_book(bigint, bigint, bigint), cancel_reservation(bigint), pay_fines(bigint, bigint), delete_book(bigint),
+  expire_holds(), _drain_queue(bigint), _copy_back(bigint), _check_staff(bigint) from public, anon, authenticated;
 
 
 -- =====================================================================
@@ -536,31 +601,40 @@ insert into members (member_code, name, phone, email, join_date, active) values
   ('M0059', 'Vivek Chandra', '9839299900', 'vivek.chandra@example.com', current_date - 10, true),
   ('M0060', 'Nisha Fernandes', '9820300011', 'nisha.fernandes@example.com', current_date - 3, true);
 
+-- Staff (S001 Elarvix, Admin, is created by schema.sql)
+insert into staff (staff_code, name, role, shift, email, phone, join_date, active) values
+  ('S002', 'Kavitha Rao', 'Librarian', 'Morning', 'kavitha.rao@library.example', '9845100001', current_date - 900, true),
+  ('S003', 'Rakesh Menon', 'Librarian', 'Evening', 'rakesh.menon@library.example', '9845100002', current_date - 640, true),
+  ('S004', 'Anita Desai', 'Assistant', 'Morning', 'anita.desai@library.example', '9845100003', current_date - 300, true),
+  ('S005', 'Sameer Khan', 'Assistant', 'Evening', 'sameer.khan@library.example', '9845100004', current_date - 120, true),
+  ('S006', 'Lalitha Iyer', 'Assistant', 'Full day', 'lalitha.iyer@library.example', '9845100005', current_date - 1200, false);
+
 -- Loans. Helper: look books up by ISBN and members by member_code.
-insert into issues (book_id, member_id, issued_on, due_on, returned_on, fine, fine_paid)
-select b.id, m.id, x.issued_on, x.due_on, x.returned_on, x.fine, false
+insert into issues (book_id, member_id, issued_on, due_on, returned_on, fine, fine_paid, issued_by, returned_by)
+select b.id, m.id, x.issued_on, x.due_on, x.returned_on, x.fine, false,
+       (select id from staff where staff_code = x.issued_by), (select id from staff where staff_code = x.returned_by)
 from (values
   -- Asha: Dune and The Hobbit, 30 days ago -> 16 days overdue
-  ('9780441013593', 'M0001', current_date - 30, current_date - 16, null::date, 0),
-  ('9780261102217', 'M0001', current_date - 30, current_date - 16, null::date, 0),
+  ('9780441013593', 'M0001', current_date - 30, current_date - 16, null::date, 0, 'S002', null),
+  ('9780261102217', 'M0001', current_date - 30, current_date - 16, null::date, 0, 'S002', null),
   -- Ravi: Clean Code returned 4 days late -> ₹20 unpaid fine
-  ('9780132350884', 'M0002', current_date - 30, current_date - 16, current_date - 12, 20),
+  ('9780132350884', 'M0002', current_date - 30, current_date - 16, current_date - 12, 20, 'S002', 'S003'),
   -- Meera: the only copy of The Pragmatic Programmer (Arjun and Fatima are queued for it)
-  ('9780135957059', 'M0003', current_date - 10, current_date + 4, null::date, 0),
+  ('9780135957059', 'M0003', current_date - 10, current_date + 4, null::date, 0, 'S003', null),
   -- Fatima: Atomic Habits, returned yesterday -> held for Meera
-  ('9781847941831', 'M0005', current_date - 10, current_date + 4, current_date - 1, 0),
+  ('9781847941831', 'M0005', current_date - 10, current_date + 4, current_date - 1, 0, 'S003', 'S002'),
   -- Issued today
-  ('9780099590088', 'M0004', current_date, current_date + 14, null::date, 0),
-  ('9780132350884', 'M0007', current_date, current_date + 14, null::date, 0),
-  ('9788173711466', 'M0008', current_date, current_date + 14, null::date, 0),
-  ('9780006550686', 'M0009', current_date, current_date + 14, null::date, 0)
-) as x(isbn, code, issued_on, due_on, returned_on, fine)
+  ('9780099590088', 'M0004', current_date, current_date + 14, null::date, 0, 'S001', null),
+  ('9780132350884', 'M0007', current_date, current_date + 14, null::date, 0, 'S002', null),
+  ('9788173711466', 'M0008', current_date, current_date + 14, null::date, 0, 'S004', null),
+  ('9780006550686', 'M0009', current_date, current_date + 14, null::date, 0, 'S001', null)
+) as x(isbn, code, issued_on, due_on, returned_on, fine, issued_by, returned_by)
 join books b on b.isbn = x.isbn
 join members m on m.member_code = x.code;
 
 -- Reservations (queue order = insertion order)
-insert into reservations (book_id, member_id, reserved_on, status, ready_on, hold_until)
-select b.id, m.id, x.reserved_on, x.status, x.ready_on, x.hold_until
+insert into reservations (book_id, member_id, reserved_on, status, ready_on, hold_until, created_by)
+select b.id, m.id, x.reserved_on, x.status, x.ready_on, x.hold_until, (select id from staff where staff_code = 'S004')
 from (values
   (1, '9780135957059', 'M0004', current_date - 10, 'waiting', null::date, null::date),  -- Arjun, #1
   (2, '9780135957059', 'M0005', current_date - 10, 'waiting', null::date, null::date),  -- Fatima, #2
