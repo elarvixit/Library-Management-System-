@@ -339,7 +339,7 @@ const PAGES = {
   books: { title: 'Books', sub: () => `${plural(state.dash?.stats.titles ?? 0, 'title')} · ${plural(state.dash?.stats.copies ?? 0, 'copy', 'copies')} · ${state.dash?.stats.available ?? 0} on the shelf` },
   members: { title: 'Members', sub: () => `${state.dash?.stats.active_members ?? 0} active of ${plural(state.members.length, 'member')}` },
 };
-const LIBRARIAN = 'Pavan Aluru';
+const LIBRARIAN = 'Elarvix';
 function greeting() {
   const h = new Date().getHours();
   return `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}, ${LIBRARIAN.split(' ')[0]}.`;
