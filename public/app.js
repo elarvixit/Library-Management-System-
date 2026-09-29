@@ -119,7 +119,8 @@ async function api(method, url, body) {
 
 async function refreshAll() {
   const [dash, stats, members, books, reservations, loans] = await Promise.all([
-    api('GET', '/api/dashboard'), api('GET', '/api/stats'), api('GET', '/api/members'), api('GET', '/api/books'),
+    // Stats are optional: an older server without /api/stats still gets a working app.
+    api('GET', '/api/dashboard'), api('GET', '/api/stats').catch(() => null), api('GET', '/api/members'), api('GET', '/api/books'),
     api('GET', '/api/reservations?status=open'), api('GET', '/api/issues?status=active'),
   ]);
   Object.assign(state, { dash, stats, members, books, reservations, loans });
@@ -409,8 +410,11 @@ const renderers = {};
 // ===================================================================== dashboard
 renderers.dashboard = async () => {
   const d = state.dash;
-  const st = state.stats;
-  if (!d || !st) { $('#view-dashboard').innerHTML = skeleton(400); return; }
+  if (!d) { $('#view-dashboard').innerHTML = `<div class="card">${skeleton(400)}</div>`; return; }
+  const st = state.stats || {
+    activity: [], categories: [], topBooks: [], dueSoon: [], recent: [], utilisation: d.stats.copies ? Math.round((d.stats.on_loan / d.stats.copies) * 100) : 0,
+    onTimeRate: null, fines: { collected_this_month: 0 }, missing: true,
+  };
   const s = d.stats;
   const todayAct = st.activity.at(-1) || { issued: 0, returned: 0 };
   const owing = state.members.filter((m) => m.unpaid_fines > 0).length;
@@ -425,6 +429,8 @@ renderers.dashboard = async () => {
     pickup: d.readyForPickup,
   };
   $('#view-dashboard').innerHTML = `
+    ${st.missing ? `<div class="callout warn row-gap">${icon('alert')}<span><b>The server is running an older version.</b> Charts and analytics need a restart:
+      in the server window press <kbd>Ctrl</kbd> + <kbd>C</kbd>, run <b>npm.cmd start</b>, then refresh this page.</span></div>` : ''}
     <div class="kpis">
       ${kpi('Books on loan', s.on_loan, 'book', 'tone-indigo', `${st.utilisation}% of ${plural(s.copies, 'copy', 'copies')} in use`, 'loans')}
       ${kpi('Issued today', s.issued_today, 'arrowOut', 'tone-blue', `${plural(todayAct.returned, 'return')} today`, 'loans')}
@@ -484,7 +490,8 @@ renderers.dashboard = async () => {
           <div class="grow"><b>${esc(b.title)}</b><span class="sub">${esc(b.author)}</span></div><span class="muted small nowrap">${plural(b.loans, 'loan')}</span></div>`).join('')}</div>` : ''}
       </div>
     </div>`;
-  drawActivityChart($('#activity-chart'), st.activity);
+  if (st.missing) $('#activity-chart').innerHTML = empty('activity', 'Chart unavailable', 'Restart the server to load analytics.', 'sm');
+  else drawActivityChart($('#activity-chart'), st.activity);
 };
 
 function renderAttention(kind, rows) {
@@ -1408,7 +1415,7 @@ document.addEventListener('click', (e) => {
   const t = e.target.closest('#attn-tabs button[data-attn]');
   if (!t) return;
   ui.attn = t.dataset.attn;
-  const rows = { overdue: state.dash.overdue, due: state.stats.dueSoon, pickup: state.dash.readyForPickup }[ui.attn];
+  const rows = { overdue: state.dash.overdue, due: state.stats?.dueSoon || [], pickup: state.dash.readyForPickup }[ui.attn];
   $$('#attn-tabs button').forEach((b) => b.classList.toggle('on', b === t));
   $('#attn-body').innerHTML = renderAttention(ui.attn, rows);
 });
