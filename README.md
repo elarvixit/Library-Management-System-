@@ -11,7 +11,7 @@ Requires **Node.js 22.13 or later** (it uses the built-in `node:sqlite` module, 
 ```bash
 npm install
 npm run seed     # optional: demo data (overdue loans, fines, a queue, a copy ready for pickup)
-npm run add-members  # optional: add 24 sample members to a running library
+npm run add-samples  # optional: add 54 sample members + 25 well-known books to a running library
 npm start        # http://localhost:3000
 npm test         # business-rule test suite
 ```

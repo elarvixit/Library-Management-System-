@@ -232,14 +232,14 @@ function loanSlip(r) {
   return `<div class="p-doc"><h1>Library Desk</h1><div class="p-sub">Loan slip · #${r.id}</div>
     ${pRow('Member', `${r.member_name} (${r.member_code})`)}${pRow('Book', r.title)}${pRow('ISBN', r.isbn)}
     ${pRow('Issued on', fmtDate(r.issued_on))}<div class="p-total"><span>Due back</span><span>${fmtDate(r.due_on)}</span></div>
-    <div class="p-foot">Late returns are charged ₹${RULES.FINE_PER_DAY} per day. Thank you for reading!</div></div>`;
+    ${pRow('Issued by', LIBRARIAN)}<div class="p-foot">Late returns are charged ₹${RULES.FINE_PER_DAY} per day. Thank you for reading!</div></div>`;
 }
 function returnReceipt(r) {
   return `<div class="p-doc"><h1>Library Desk</h1><div class="p-sub">Return receipt · #${r.id}</div>
     ${pRow('Member', `${r.member_name} (${r.member_code})`)}${pRow('Book', r.title)}${pRow('Issued on', fmtDate(r.issued_on))}
     ${pRow('Due on', fmtDate(r.due_on))}${pRow('Returned on', fmtDate(r.returned_on))}${pRow('Days late', r.daysLate)}
     <div class="p-total"><span>Fine</span><span>${rupees(r.fine)}${r.fine ? ' (unpaid)' : ''}</span></div>
-    <div class="p-foot">Fines must be paid before new books can be issued.</div></div>`;
+    ${pRow('Received by', LIBRARIAN)}<div class="p-foot">Fines must be paid before new books can be issued.</div></div>`;
 }
 function memberCard(m) {
   return `<div class="p-card"><div class="p-brand">LIBRARY DESK · MEMBER</div><div><div class="p-name">${esc(m.name)}</div>
@@ -339,9 +339,10 @@ const PAGES = {
   books: { title: 'Books', sub: () => `${plural(state.dash?.stats.titles ?? 0, 'title')} · ${plural(state.dash?.stats.copies ?? 0, 'copy', 'copies')} · ${state.dash?.stats.available ?? 0} on the shelf` },
   members: { title: 'Members', sub: () => `${state.dash?.stats.active_members ?? 0} active of ${plural(state.members.length, 'member')}` },
 };
+const LIBRARIAN = 'Pavan Aluru';
 function greeting() {
   const h = new Date().getHours();
-  return h < 12 ? 'Good morning.' : h < 17 ? 'Good afternoon.' : 'Good evening.';
+  return `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}, ${LIBRARIAN.split(' ')[0]}.`;
 }
 const actBtn = (act, ic, label, cls = '', extra = '') => `<button class="btn ${cls}" data-act="${act}" ${extra}>${icon(ic)}${label}</button>`;
 const linkBtn = (href, ic, label) => `<a class="btn" href="${href}" download>${icon(ic)}${label}</a>`;

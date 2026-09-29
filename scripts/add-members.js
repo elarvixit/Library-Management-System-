@@ -1,7 +1,9 @@
-// Adds the sample members to a RUNNING library through its REST API (safe while the server runs).
-// Members whose name already exists are skipped, so it can be run more than once.
-//   npm run add-members                 (uses http://localhost:3000)
-//   npm run add-members -- http://localhost:3001
+// Adds the sample members and sample books to a RUNNING library through its REST API
+// (safe while the server runs). Existing members (by name) and books (by ISBN) are skipped,
+// so it can be run more than once.
+//   npm run add-samples                 (uses http://localhost:3000)
+//   npm run add-samples -- http://localhost:3001
+import fs from 'node:fs';
 import { SAMPLE_MEMBERS, emailFor } from './sample-members.js';
 
 const base = (process.argv[2] || process.env.LIBRARY_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -30,3 +32,14 @@ for (const [name, phone, joined, active] of SAMPLE_MEMBERS) {
   added++;
 }
 console.log(`Added ${added} member(s); ${SAMPLE_MEMBERS.length - added} already existed or were skipped.`);
+
+// Sample books: the server's CSV import skips any ISBN that is already in the catalogue.
+const csv = fs.readFileSync(new URL('../sample-data/books.csv', import.meta.url), 'utf8');
+const imp = await fetch(`${base}/api/books/import`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csv }),
+}).then((r) => r.json());
+if (imp.error) console.warn(`Book import failed: ${imp.error}`);
+else {
+  for (const b of imp.importedBooks) console.log(`  + ${b.title}`);
+  console.log(`Added ${imp.imported} book(s); ${imp.skipped.length} already in the catalogue.`);
+}

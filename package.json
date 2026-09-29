@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "seed": "node scripts/seed.js",
+    "add-samples": "node scripts/add-members.js",
     "add-members": "node scripts/add-members.js",
     "test": "node --test \"test/**/*.test.js\""
   },

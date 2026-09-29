@@ -388,8 +388,6 @@
   ICONS.send = '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>';
   const root = document.createElement('div');
   root.innerHTML = `
-    <button class="as-fab" id="as-fab" type="button" aria-label="Open Library Assistant" aria-expanded="false">
-      ${icon('chat')}<span>Ask assistant</span></button>
     <section class="as-panel" id="as-panel" role="dialog" aria-label="Library Assistant" hidden>
       <header class="as-head">
         <span class="as-logo">${icon('sparkle')}</span>
@@ -408,7 +406,7 @@
 
   const log = $('#as-log');
   const panel = $('#as-panel');
-  const fab = $('#as-fab');
+  const fab = $('#ai-top-btn'); // the assistant opens only from the top bar (or the A shortcut)
   const input = $('#as-input');
   let started = false;
 
@@ -442,8 +440,7 @@
   function open() {
     panel.hidden = false;
     fab.setAttribute('aria-expanded', 'true');
-    fab.classList.add('hide');
-    $('#ai-top-btn')?.classList.add('on');
+    fab.classList.add('on');
     if (!started) {
       started = true;
       const w = welcome();
@@ -455,17 +452,13 @@
   function close() {
     panel.hidden = true;
     fab.setAttribute('aria-expanded', 'false');
-    fab.classList.remove('hide');
-    $('#ai-top-btn')?.classList.remove('on');
+    fab.classList.remove('on');
   }
 
-  fab.addEventListener('click', open);
-  // Top-bar shortcut (the icon may have been hydrated before this file registered it)
-  const topBtn = $('#ai-top-btn');
-  if (topBtn) {
-    $('.ai-spark', topBtn).innerHTML = icon('sparkle');
-    topBtn.addEventListener('click', () => { if (panel.hidden) open(); else close(); });
-  }
+  // The sparkle icon may have been hydrated before this file registered it.
+  $('.ai-spark', fab).innerHTML = icon('sparkle');
+  fab.setAttribute('aria-expanded', 'false');
+  fab.addEventListener('click', () => { if (panel.hidden) open(); else close(); });
   $('#as-close').addEventListener('click', close);
   $('#as-clear').addEventListener('click', () => { log.innerHTML = ''; started = false; open(); });
   $('#as-form').addEventListener('submit', (e) => { e.preventDefault(); ask(input.value); });
