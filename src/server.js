@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
 import { Library, LibraryError } from './library.js';
 import { parseBooksCsv, toCsv } from './csv.js';
+import { seedDemo } from './demo-seed.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -102,12 +103,20 @@ export function createApp(lib) {
   return app;
 }
 
+// ---------------------------------------------------------------- default app
+// On Vercel the app runs as a serverless function: the project folder is read-only, so the
+// database lives in /tmp (writable, but temporary) and is filled with demo data when empty.
+const onVercel = !!process.env.VERCEL;
+const dbFile = process.env.DB_FILE || (onVercel ? '/tmp/library.db' : path.join(here, '..', 'data', 'library.db'));
+const db = openDb(dbFile);
+if (onVercel || process.env.SEED_DEMO === '1') seedDemo(db);
+const app = createApp(new Library(db));
+export default app;
+
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isMain) {
-  const dbFile = process.env.DB_FILE || path.join(here, '..', 'data', 'library.db');
-  const lib = new Library(openDb(dbFile));
+if (isMain && !onVercel) {
   const port = Number(process.env.PORT) || 3000;
-  createApp(lib).listen(port, () => {
+  app.listen(port, () => {
     console.log(`Library Management System running at http://localhost:${port}`);
     console.log(`Database: ${dbFile}`);
   });
