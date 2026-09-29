@@ -4,94 +4,86 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Library Desk</title>
+  <meta name="description" content="Library Desk — a librarian's console for books, members, loans, fines and reservations.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 8h11a3 3 0 0 1 3 3v13H12a3 3 0 0 1-3-3z' fill='none' stroke='white' stroke-width='2.2'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div class="app">
-  <!-- SIDEBAR -->
+  <!-- ============================================================ SIDEBAR -->
   <aside class="sidebar" id="sidebar">
-    <div class="brand">
-      <div class="brand-mark" data-icon="book"></div>
-      <div>
-        <div class="brand-name">Library Desk</div>
-        <div class="brand-sub">Librarian console</div>
-      </div>
-    </div>
+    <a class="brand" href="#/dashboard">
+      <span class="brand-mark" data-icon="book"></span>
+      <span><span class="brand-name">Library Desk</span><span class="brand-sub">Management System</span></span>
+    </a>
     <nav class="nav" aria-label="Main">
+      <div class="nav-group">Overview</div>
       <a href="#/dashboard" class="nav-item" data-view="dashboard"><span data-icon="grid"></span>Dashboard</a>
-      <a href="#/circulation" class="nav-item" data-view="circulation"><span data-icon="repeat"></span>Issue &amp; Return<span class="nav-badge danger" id="nb-overdue" hidden></span></a>
-      <a href="#/reservations" class="nav-item" data-view="reservations"><span data-icon="bookmark"></span>Reservations<span class="nav-badge" id="nb-ready" hidden></span></a>
+      <a href="#/activity" class="nav-item" data-view="activity"><span data-icon="activity"></span>Activity</a>
+      <div class="nav-group">Circulation</div>
+      <a href="#/circulation/issue" class="nav-item" data-view="circulation"><span data-icon="repeat"></span>Issue &amp; Return<span class="nav-badge danger" id="nb-overdue" hidden></span></a>
+      <a href="#/reservations" class="nav-item" data-view="reservations"><span data-icon="bookmark"></span>Reservations<span class="nav-badge success" id="nb-ready" hidden></span></a>
+      <a href="#/fines" class="nav-item" data-view="fines"><span data-icon="wallet"></span>Fines<span class="nav-badge warn" id="nb-fines" hidden></span></a>
+      <div class="nav-group">Catalog</div>
       <a href="#/books" class="nav-item" data-view="books"><span data-icon="book"></span>Books</a>
-      <a href="#/members" class="nav-item" data-view="members"><span data-icon="users"></span>Members<span class="nav-badge warn" id="nb-fines" hidden></span></a>
+      <a href="#/members" class="nav-item" data-view="members"><span data-icon="users"></span>Members</a>
     </nav>
     <div class="sidebar-foot">
-      <div class="today-card">
-        <span data-icon="clock"></span>
-        <div><div class="muted-s">Today</div><div id="today-label">—</div></div>
+      <div class="rules-card">
+        <div class="rules-title"><span data-icon="info"></span>Library rules</div>
+        <ul id="rules-list"></ul>
       </div>
-      <button class="theme-btn" id="theme-btn" type="button" aria-label="Toggle dark mode"><span data-icon="moon"></span><span id="theme-label">Dark mode</span></button>
+      <button class="theme-btn" id="theme-btn" type="button"></button>
     </div>
   </aside>
   <div class="scrim" id="scrim"></div>
 
-  <!-- MAIN -->
+  <!-- ============================================================ MAIN -->
   <div class="main">
-    <header class="pagebar">
+    <header class="topbar">
       <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Open menu"><span data-icon="menu"></span></button>
-      <div class="pagebar-text">
-        <h1 id="page-title">Dashboard</h1>
-        <p id="page-sub"></p>
+      <nav class="crumbs" aria-label="Breadcrumb"><span>Library Desk</span><span data-icon="chevRight"></span><b id="crumb">Dashboard</b></nav>
+      <button class="search-trigger" id="search-trigger" type="button">
+        <span data-icon="search"></span><span class="st-text">Search books, members, actions…</span><kbd>Ctrl K</kbd>
+      </button>
+      <div class="top-actions">
+        <div class="bell-wrap">
+          <button class="icon-btn" id="bell-btn" type="button" aria-label="Notifications" aria-haspopup="true"><span data-icon="bell"></span><span class="bell-dot" id="bell-dot" hidden></span></button>
+          <div class="popover" id="bell-pop" hidden></div>
+        </div>
+        <div class="me"><span class="me-avatar">LB</span><span class="me-text"><b>Librarian</b><small id="today-label">—</small></span></div>
       </div>
-      <div class="page-actions" id="page-actions"></div>
     </header>
 
-    <main class="content">
+    <main class="content" id="content">
+      <div class="page-head">
+        <div>
+          <h1 id="page-title">Dashboard</h1>
+          <p id="page-sub"></p>
+        </div>
+        <div class="page-actions" id="page-actions"></div>
+      </div>
+
       <!-- DASHBOARD -->
-      <section class="view" id="view-dashboard">
-        <div class="kpis" id="kpis"></div>
-        <div class="quick" id="quick">
-          <button class="quick-btn" data-go="issue"><span class="qi indigo" data-icon="arrowOut"></span><span><b>Issue a book</b><small>Lend to a member</small></span></button>
-          <button class="quick-btn" data-go="return"><span class="qi green" data-icon="arrowIn"></span><span><b>Return a book</b><small>Calculate fines</small></span></button>
-          <button class="quick-btn" data-go="reserve"><span class="qi amber" data-icon="bookmark"></span><span><b>Reserve</b><small>Join the queue</small></span></button>
-          <button class="quick-btn" data-go="add-member"><span class="qi rose" data-icon="userPlus"></span><span><b>New member</b><small>Register a reader</small></span></button>
-        </div>
-        <div class="grid2">
-          <div class="panel">
-            <div class="panel-head"><div><h2>Ready for pickup</h2><p>Copies held 2 days for the first person in the queue</p></div></div>
-            <div id="dash-ready"></div>
-          </div>
-          <div class="panel">
-            <div class="panel-head"><div><h2>Waiting queue</h2><p>Members waiting for a copy to come back</p></div></div>
-            <div id="dash-pending"></div>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="panel-head">
-            <div><h2>Overdue</h2><p>Fine builds at ₹5 per day late and is recorded on return</p></div>
-            <a class="btn ghost" href="/api/reports/overdue.csv" download><span data-icon="download"></span>Export CSV</a>
-          </div>
-          <div id="dash-overdue"></div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><div><h2>Issued today</h2></div></div>
-          <div id="dash-today"></div>
-        </div>
-      </section>
+      <section class="view" id="view-dashboard"></section>
+
+      <!-- ACTIVITY -->
+      <section class="view" id="view-activity"></section>
 
       <!-- CIRCULATION -->
       <section class="view" id="view-circulation">
-        <div class="segmented big" id="circ-tabs" role="tablist">
-          <button data-tab="issue" class="on"><span data-icon="arrowOut"></span>Issue</button>
-          <button data-tab="return"><span data-icon="arrowIn"></span>Return</button>
+        <div class="tabs" id="circ-tabs" role="tablist">
+          <button data-tab="issue" role="tab"><span data-icon="arrowOut"></span>Issue a book</button>
+          <button data-tab="return" role="tab"><span data-icon="arrowIn"></span>Loans &amp; returns<span class="tab-count" id="loan-count"></span></button>
         </div>
 
         <div id="circ-issue" class="circ-pane">
           <form id="issue-form" class="issue-layout" autocomplete="off">
-            <div class="panel">
-              <div class="step"><span class="step-n">1</span><h2>Member</h2></div>
+            <div class="card pad">
+              <div class="step"><span class="step-n">1</span><div><h2>Select member</h2><p>Only active members can borrow</p></div></div>
               <div class="picker" id="pk-issue-member">
                 <span class="picker-ico" data-icon="search"></span>
                 <input class="picker-input" placeholder="Search by name, member ID or phone…" aria-label="Member">
@@ -100,7 +92,7 @@
               </div>
               <div id="issue-member-card"></div>
 
-              <div class="step"><span class="step-n">2</span><h2>Book</h2></div>
+              <div class="step"><span class="step-n">2</span><div><h2>Select book</h2><p>Search the catalogue by title, author or ISBN</p></div></div>
               <div class="picker" id="pk-issue-book">
                 <span class="picker-ico" data-icon="search"></span>
                 <input class="picker-input" placeholder="Search by title, author or ISBN…" aria-label="Book">
@@ -109,35 +101,39 @@
               </div>
               <div id="issue-book-card"></div>
 
-              <div class="step"><span class="step-n">3</span><h2>Loan period</h2></div>
+              <div class="step"><span class="step-n">3</span><div><h2>Loan period</h2><p>Default loan is <span class="js-loan-days">14</span> days</p></div></div>
               <div class="row2">
                 <label class="field">Issue date<input type="date" name="issuedOn" required></label>
                 <label class="field">Due date<input type="date" name="dueOn" required></label>
               </div>
               <div class="chips" id="due-chips">
-                <button type="button" class="chip" data-days="7">7 days</button>
-                <button type="button" class="chip on" data-days="14">14 days (default)</button>
-                <button type="button" class="chip" data-days="21">21 days</button>
+                <button type="button" class="chip" data-days="7">1 week</button>
+                <button type="button" class="chip on" data-days="14">2 weeks · default</button>
+                <button type="button" class="chip" data-days="21">3 weeks</button>
+                <button type="button" class="chip" data-days="28">4 weeks</button>
               </div>
             </div>
 
-            <div class="panel sticky">
-              <h2>Pre-issue check</h2>
-              <p class="muted">Every rule is checked again on the server when you issue.</p>
-              <ul class="checks" id="issue-checks"><li class="pending"><span data-icon="clock"></span>Choose a member and a book</li></ul>
-              <button class="btn primary block" type="submit" id="issue-submit" disabled><span data-icon="arrowOut"></span>Issue book</button>
+            <aside class="card pad sticky summary">
+              <h2>Loan summary</h2>
+              <div id="issue-summary" class="summary-grid"></div>
+              <h3 class="sub-h">Rule check</h3>
+              <ul class="checks" id="issue-checks"></ul>
+              <button class="btn primary block lg" type="submit" id="issue-submit" disabled><span data-icon="arrowOut"></span>Issue book</button>
               <p class="block-reason" id="issue-reason"></p>
-            </div>
+              <p class="fine-print">All rules are validated again by the server.</p>
+            </aside>
           </form>
         </div>
 
         <div id="circ-return" class="circ-pane" hidden>
-          <div class="panel">
-            <div class="toolbar">
+          <div class="card">
+            <div class="card-toolbar">
               <div class="search"><span data-icon="search"></span><input id="loan-q" type="search" placeholder="Find a loan by member, book or ISBN…" data-slash></div>
               <div class="segmented" id="loan-filter">
-                <button data-v="active" class="on">On loan</button>
+                <button data-v="active">On loan</button>
                 <button data-v="overdue">Overdue</button>
+                <button data-v="due-soon">Due soon</button>
                 <button data-v="returned">Returned</button>
                 <button data-v="all">All</button>
               </div>
@@ -149,7 +145,8 @@
 
       <!-- RESERVATIONS -->
       <section class="view" id="view-reservations">
-        <form id="reserve-form" class="panel reserve-bar" autocomplete="off">
+        <form id="reserve-form" class="card pad reserve-bar" autocomplete="off">
+          <div class="rb-title"><span class="kpi-ico tone-amber" data-icon="bookmark"></span><div><b>New reservation</b><small>Only for books with no copy on the shelf</small></div></div>
           <div class="picker" id="pk-res-member">
             <span class="picker-ico" data-icon="users"></span>
             <input class="picker-input" placeholder="Member…" aria-label="Member">
@@ -158,89 +155,116 @@
           </div>
           <div class="picker" id="pk-res-book">
             <span class="picker-ico" data-icon="book"></span>
-            <input class="picker-input" placeholder="Book with no copies available…" aria-label="Book">
+            <input class="picker-input" placeholder="Book…" aria-label="Book">
             <button type="button" class="picker-clear" aria-label="Clear" data-icon="x"></button>
             <ul class="picker-list" hidden role="listbox"></ul>
           </div>
-          <button class="btn primary" type="submit"><span data-icon="bookmark"></span>Place reservation</button>
+          <button class="btn primary" type="submit"><span data-icon="plus"></span>Reserve</button>
         </form>
-        <div class="panel">
-          <div class="panel-head">
-            <div><h2>Queues</h2><p>First come, first served. A returned copy is held 2 days for the first person in line.</p></div>
-            <div class="segmented" id="res-filter">
-              <button data-v="open" class="on">Open</button>
-              <button data-v="ready">Ready</button>
-              <button data-v="waiting">Waiting</button>
-              <button data-v="closed">History</button>
-            </div>
-          </div>
-          <div id="res-list"></div>
-        </div>
+        <div id="res-body"></div>
       </section>
+
+      <!-- FINES -->
+      <section class="view" id="view-fines"></section>
 
       <!-- BOOKS -->
       <section class="view" id="view-books">
-        <div class="panel">
-          <div class="toolbar">
-            <div class="search"><span data-icon="search"></span><input id="book-q" type="search" placeholder="Search books…  (press / )" data-slash></div>
+        <div class="card">
+          <div class="card-toolbar">
+            <div class="search"><span data-icon="search"></span><input id="book-q" type="search" placeholder="Search books…" data-slash><kbd class="in-kbd">/</kbd></div>
             <div class="segmented" id="book-field">
-              <button data-v="all" class="on">All</button>
+              <button data-v="all">All</button>
               <button data-v="title">Title</button>
               <button data-v="author">Author</button>
               <button data-v="isbn">ISBN</button>
               <button data-v="category">Category</button>
             </div>
-            <label class="switch"><input type="checkbox" id="book-avail"><span class="track"></span>Available only</label>
           </div>
-          <div class="chips" id="cat-chips"></div>
-          <div id="books-table"></div>
+          <div class="card-toolbar sub">
+            <select id="book-cat" aria-label="Category"></select>
+            <select id="book-sort" aria-label="Sort by">
+              <option value="title">Sort: Title A–Z</option>
+              <option value="author">Sort: Author A–Z</option>
+              <option value="avail">Sort: Most available</option>
+              <option value="demand">Sort: Most in demand</option>
+              <option value="recent">Sort: Recently added</option>
+            </select>
+            <label class="switch"><input type="checkbox" id="book-avail"><span class="track"></span>Available only</label>
+            <span class="spacer"></span>
+            <span class="result-count" id="book-count"></span>
+            <div class="segmented icon-seg" id="book-view" aria-label="View">
+              <button data-v="table" aria-label="Table view" title="Table view"><span data-icon="list"></span></button>
+              <button data-v="grid" aria-label="Grid view" title="Grid view"><span data-icon="grid"></span></button>
+            </div>
+          </div>
+          <div id="books-body"></div>
         </div>
         <input type="file" id="import-file" accept=".csv,text/csv" hidden>
       </section>
 
       <!-- MEMBERS -->
       <section class="view" id="view-members">
-        <div class="panel">
-          <div class="toolbar">
-            <div class="search"><span data-icon="search"></span><input id="member-q" type="search" placeholder="Search by name, member ID, phone or email…  (press / )" data-slash></div>
+        <div class="card">
+          <div class="card-toolbar">
+            <div class="search"><span data-icon="search"></span><input id="member-q" type="search" placeholder="Search by name, member ID, phone or email…" data-slash><kbd class="in-kbd">/</kbd></div>
             <div class="segmented" id="member-filter">
-              <button data-v="all" class="on">All</button>
+              <button data-v="all">All</button>
               <button data-v="active">Active</button>
               <button data-v="inactive">Inactive</button>
               <button data-v="fines">With fines</button>
+              <button data-v="borrowing">Borrowing</button>
             </div>
           </div>
-          <div id="members-table"></div>
+          <div class="card-toolbar sub">
+            <select id="member-sort" aria-label="Sort by">
+              <option value="name">Sort: Name A–Z</option>
+              <option value="recent">Sort: Newest members</option>
+              <option value="books">Sort: Most books on loan</option>
+              <option value="fines">Sort: Highest fines</option>
+            </select>
+            <span class="spacer"></span>
+            <span class="result-count" id="member-count"></span>
+          </div>
+          <div id="members-body"></div>
         </div>
       </section>
     </main>
   </div>
 </div>
 
-<!-- DETAIL DRAWER -->
+<!-- ============================================================ OVERLAYS -->
 <div class="drawer-scrim" id="drawer-scrim"></div>
-<aside class="drawer" id="drawer" aria-hidden="true">
+<aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-modal="true">
   <button class="icon-btn drawer-close" id="drawer-close" type="button" aria-label="Close" data-icon="x"></button>
   <div id="drawer-body"></div>
 </aside>
 
-<!-- MODAL -->
 <dialog id="modal">
   <form method="dialog" id="modal-form" autocomplete="off">
     <div class="modal-head">
       <span class="modal-ico" id="modal-ico"></span>
-      <h2 id="modal-title"></h2>
+      <div><h2 id="modal-title"></h2><p id="modal-sub"></p></div>
     </div>
     <div id="modal-body"></div>
     <p id="modal-error" class="form-error" role="alert"></p>
-    <div class="modal-actions">
+    <div class="modal-actions" id="modal-actions">
+      <span id="modal-extra"></span>
+      <span class="spacer"></span>
       <button type="button" class="btn ghost" id="modal-cancel">Cancel</button>
       <button type="submit" class="btn primary" id="modal-ok">Save</button>
     </div>
   </form>
 </dialog>
 
+<dialog id="palette" class="palette">
+  <div class="pal-search"><span data-icon="search"></span><input id="pal-input" placeholder="Search books, members, or type a command…" autocomplete="off" aria-label="Command search"><kbd>Esc</kbd></div>
+  <div class="pal-results" id="pal-results" role="listbox"></div>
+  <div class="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd> navigate</span><span><kbd>Enter</kbd> open</span><span><kbd>/</kbd> page search</span><span><kbd>?</kbd> shortcuts</span></div>
+</dialog>
+
+<div id="chart-tip" class="chart-tip" hidden></div>
 <div id="toasts" aria-live="polite"></div>
+<div id="print-area" aria-hidden="true"></div>
 <script src="app.js"></script>
 </body>
 </html>

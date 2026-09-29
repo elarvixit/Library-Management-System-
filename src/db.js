@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS issues (
   fine        INTEGER NOT NULL DEFAULT 0 CHECK (fine >= 0),  -- rupees, set on return
   fine_paid   INTEGER NOT NULL DEFAULT 0 CHECK (fine_paid IN (0, 1)),
   paid_on     TEXT,
+  renewals    INTEGER NOT NULL DEFAULT 0,
   CHECK (due_on >= issued_on)
 );
 CREATE INDEX IF NOT EXISTS ix_issues_member ON issues(member_id, returned_on);
@@ -72,5 +73,8 @@ export function openDb(file = ':memory:') {
   db.exec('PRAGMA foreign_keys = ON;');
   if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
+  // Migrations for databases created by earlier versions.
+  const issueCols = db.prepare('PRAGMA table_info(issues)').all().map((c) => c.name);
+  if (!issueCols.includes('renewals')) db.exec('ALTER TABLE issues ADD COLUMN renewals INTEGER NOT NULL DEFAULT 0');
   return db;
 }

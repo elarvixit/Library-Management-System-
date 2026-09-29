@@ -13,6 +13,8 @@ export const RULES = Object.freeze({
   MAX_ACTIVE_ISSUES: 3, // a member may hold at most 3 books at a time
   FINE_PER_DAY: 5,      // ₹5 per day late
   HOLD_DAYS: 2,         // a returned copy is held for the next reserver for 2 days
+  MAX_RENEWALS: 2,      // a loan can be extended at most twice
+  DUE_SOON_DAYS: 3,     // "due soon" window on the dashboard
 });
 
 export class LibraryError extends Error {
@@ -492,6 +494,59 @@ export class Library {
     });
   }
 
+  /**
+   * Renew (extend) a loan: new due date = today + LOAN_DAYS. Refused when
+   *  - the loan is already returned or overdue (an overdue book must be returned and its fine paid),
+   *  - the member has unpaid fines,
+   *  - someone is waiting in the reservation queue for this book (they get it first),
+   *  - the loan was already renewed MAX_RENEWALS times.
+   */
+  renewIssue(issueId) {
+    return this.tx(() => {
+      const today = this.today();
+      const issue = this.one('SELECT * FROM issues WHERE id = ?', id(issueId, 'issue'));
+      if (!issue) throw notFound('Issue record');
+      if (issue.returned_on) throw conflict('This book has already been returned.');
+      const member = this.#member(issue.member_id);
+      const book = this.one('SELECT * FROM books WHERE id = ?', issue.book_id);
+      if (issue.due_on < today) {
+        throw conflict(`"${book.title}" is ${plural(daysBetween(issue.due_on, today), 'day')} overdue and cannot be renewed. It must be returned and the fine paid.`);
+      }
+      const owed = this.#unpaidFines(member.id);
+      if (owed > 0) throw conflict(`${member.name} has unpaid fines of ${rupees(owed)}. Loans cannot be renewed until the fine is paid.`);
+      const waiting = this.#waitingQueue(book.id).length;
+      if (waiting) throw conflict(`"${book.title}" cannot be renewed: ${waiting === 1 ? '1 member is' : `${waiting} members are`} waiting for it in the reservation queue.`);
+      if (issue.renewals >= RULES.MAX_RENEWALS) throw conflict(`This loan has already been renewed ${RULES.MAX_RENEWALS} times (the maximum).`);
+      const newDue = addDays(today, RULES.LOAN_DAYS);
+      if (newDue <= issue.due_on) throw conflict(`This loan is already due on ${issue.due_on}, which is later than a renewal would give.`);
+      this.run('UPDATE issues SET due_on = ?, renewals = renewals + 1 WHERE id = ?', newDue, issue.id);
+      return { ...this.getIssue(issue.id), previousDue: issue.due_on };
+    });
+  }
+
+  /** Full loan history of one book (newest first). */
+  bookHistory(bookId) {
+    return this.tx(() => {
+      const book = this.getBook(bookId);
+      return { book, issues: this.#issueRows('i.book_id = ?', book.id).reverse() };
+    });
+  }
+
+  /** Fines ledger: every loan that produced a fine. */
+  listFines({ status = 'all' } = {}) {
+    return this.tx(() => {
+      const where = { unpaid: 'i.fine > 0 AND i.fine_paid = 0', paid: 'i.fine > 0 AND i.fine_paid = 1', all: 'i.fine > 0' }[status];
+      if (!where) throw new LibraryError('Status must be one of: unpaid, paid, all.');
+      const rows = this.#issueRows(where).sort((a, b) => (b.returned_on || '').localeCompare(a.returned_on || '') || b.id - a.id);
+      const t = this.one(`SELECT COALESCE(SUM(CASE WHEN fine_paid = 0 THEN fine END), 0) AS outstanding,
+          COALESCE(SUM(CASE WHEN fine_paid = 1 THEN fine END), 0) AS collected,
+          COALESCE(SUM(CASE WHEN fine_paid = 1 AND substr(paid_on, 1, 7) = ? THEN fine END), 0) AS collected_this_month,
+          COUNT(DISTINCT CASE WHEN fine_paid = 0 THEN member_id END) AS members_owing
+        FROM issues WHERE fine > 0`, this.today().slice(0, 7));
+      return { totals: t, rows };
+    });
+  }
+
   getIssue(issueId) {
     const [row] = this.#issueRows('i.id = ?', id(issueId, 'issue'));
     if (!row) throw notFound('Issue record');
@@ -575,7 +630,8 @@ export class Library {
       `SELECT r.*, b.title, b.isbn, m.name AS member_name, m.member_code, m.phone, m.email,
               CASE WHEN r.status = 'waiting' THEN
                 (SELECT COUNT(*) FROM reservations r2 WHERE r2.book_id = r.book_id AND r2.status = 'waiting' AND r2.id <= r.id)
-              END AS queue_position
+              END AS queue_position,
+              (SELECT MIN(i.due_on) FROM issues i WHERE i.book_id = r.book_id AND i.returned_on IS NULL) AS next_due_on
          FROM reservations r JOIN books b ON b.id = r.book_id JOIN members m ON m.id = r.member_id
         WHERE ${where} ORDER BY r.book_id, r.id`, ...params);
   }
@@ -612,6 +668,68 @@ export class Library {
         pendingReservations,
       };
     });
+  }
+
+  /** Analytics for the dashboard: 14-day activity, categories, top books, due soon, fines, recent activity. */
+  stats({ days = 14 } = {}) {
+    return this.tx(() => {
+      const today = this.today();
+      const from = addDays(today, -(days - 1));
+      const issued = new Map(this.q('SELECT issued_on AS d, COUNT(*) AS c FROM issues WHERE issued_on >= ? GROUP BY issued_on', from).map((r) => [r.d, r.c]));
+      const returned = new Map(this.q('SELECT returned_on AS d, COUNT(*) AS c FROM issues WHERE returned_on >= ? GROUP BY returned_on', from).map((r) => [r.d, r.c]));
+      const activity = Array.from({ length: days }, (_, i) => {
+        const d = addDays(from, i);
+        return { date: d, issued: issued.get(d) ?? 0, returned: returned.get(d) ?? 0 };
+      });
+      const categories = this.q(`
+        SELECT b.category, COUNT(*) AS titles, SUM(b.total_copies) AS copies,
+               (SELECT COUNT(*) FROM issues i JOIN books b2 ON b2.id = i.book_id WHERE b2.category = b.category AND b2.deleted = 0) AS loans
+          FROM books b WHERE b.deleted = 0 GROUP BY b.category ORDER BY loans DESC, copies DESC`);
+      const topBooks = this.q(`
+        SELECT b.id, b.title, b.author, COUNT(i.id) AS loans FROM books b JOIN issues i ON i.book_id = b.id
+         WHERE b.deleted = 0 GROUP BY b.id ORDER BY loans DESC, b.title LIMIT 5`);
+      const dueSoon = this.#issueRows('i.returned_on IS NULL AND i.due_on >= ? AND i.due_on <= ?', today, addDays(today, RULES.DUE_SOON_DAYS));
+      const f = this.one(`SELECT COALESCE(SUM(CASE WHEN fine_paid = 1 AND substr(paid_on, 1, 7) = ? THEN fine END), 0) AS collected_this_month,
+          COALESCE(SUM(CASE WHEN fine_paid = 1 THEN fine END), 0) AS collected_total FROM issues WHERE fine > 0`, today.slice(0, 7));
+      const s = this.one(`SELECT
+          (SELECT COALESCE(SUM(total_copies), 0) FROM books WHERE deleted = 0) AS copies,
+          (SELECT COUNT(*) FROM issues WHERE returned_on IS NULL) AS on_loan,
+          (SELECT COUNT(*) FROM issues WHERE returned_on >= ? AND returned_on <= due_on) AS on_time_returns,
+          (SELECT COUNT(*) FROM issues WHERE returned_on >= ?) AS returns_in_period`, from, from);
+      return {
+        today, from, activity, categories, topBooks, dueSoon,
+        fines: f,
+        utilisation: s.copies ? Math.round((s.on_loan / s.copies) * 100) : 0,
+        onTimeRate: s.returns_in_period ? Math.round((s.on_time_returns / s.returns_in_period) * 100) : null,
+        recent: this.recentActivity(12),
+      };
+    });
+  }
+
+  /** Recent events derived from the issue/reservation tables (newest first). */
+  recentActivity(limit = 20) {
+    const rows = this.q(`
+      SELECT * FROM (
+        SELECT 'issued' AS type, i.issued_on AS date, i.id AS seq, b.title, m.name AS member_name, NULL AS amount
+          FROM issues i JOIN books b ON b.id = i.book_id JOIN members m ON m.id = i.member_id
+        UNION ALL
+        SELECT 'returned', i.returned_on, i.id, b.title, m.name, i.fine
+          FROM issues i JOIN books b ON b.id = i.book_id JOIN members m ON m.id = i.member_id WHERE i.returned_on IS NOT NULL
+        UNION ALL
+        SELECT 'fine_paid', i.paid_on, i.id, b.title, m.name, i.fine
+          FROM issues i JOIN books b ON b.id = i.book_id JOIN members m ON m.id = i.member_id WHERE i.paid_on IS NOT NULL
+        UNION ALL
+        SELECT 'reserved', r.reserved_on, r.id, b.title, m.name, NULL
+          FROM reservations r JOIN books b ON b.id = r.book_id JOIN members m ON m.id = r.member_id
+        UNION ALL
+        SELECT 'ready', r.ready_on, r.id, b.title, m.name, NULL
+          FROM reservations r JOIN books b ON b.id = r.book_id JOIN members m ON m.id = r.member_id WHERE r.ready_on IS NOT NULL
+        UNION ALL
+        SELECT r.status, r.closed_on, r.id, b.title, m.name, NULL
+          FROM reservations r JOIN books b ON b.id = r.book_id JOIN members m ON m.id = r.member_id
+         WHERE r.closed_on IS NOT NULL AND r.status IN ('expired', 'cancelled')
+      ) ORDER BY date DESC, seq DESC LIMIT ?`, limit);
+    return rows;
   }
 
   /** Test/diagnostic helper: true when every book satisfies the copy accounting invariant. */

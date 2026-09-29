@@ -358,6 +358,78 @@ describe('reservations queue', () => {
   });
 });
 
+describe('renewals', () => {
+  test('renew extends due date to today + 14, at most twice', () => {
+    const i = issue(member(), book(1));
+    advance(10); // 01-20, due 01-24
+    const r1 = lib.renewIssue(i.id);
+    assert.equal(r1.due_on, '2026-02-03');
+    assert.equal(r1.renewals, 1);
+    assert.equal(r1.previousDue, '2026-01-24');
+    advance(10);
+    assert.equal(lib.renewIssue(i.id).renewals, 2);
+    advance(1);
+    rejects(() => lib.renewIssue(i.id), /renewed 2 times/);
+  });
+
+  test('cannot renew an overdue loan, with unpaid fines, or when someone is waiting', () => {
+    const b = book(1);
+    const m = member('Asha');
+    const i = issue(m, b);
+    const w = member('Waiter');
+    const r = reserve(w, b);
+    rejects(() => lib.renewIssue(i.id), /1 member is waiting/);
+    lib.cancelReservation(r.id);
+    advance(15);
+    rejects(() => lib.renewIssue(i.id), /overdue and cannot be renewed/);
+    const other = issue(m, book(1)); // issued 01-25, due 02-08
+    advance(1);
+    ret(i); // 01-26, 2 days late -> Asha owes ₹10
+    rejects(() => lib.renewIssue(other.id), /unpaid fines of ₹10/);
+    lib.payFines(m.id);
+    assert.equal(lib.renewIssue(other.id).due_on, '2026-02-09');
+    rejects(() => lib.renewIssue(i.id), /already been returned/);
+  });
+
+  test('cannot renew on the same day it was issued (no later due date)', () => {
+    const i = issue(member(), book());
+    rejects(() => lib.renewIssue(i.id), /already due on/);
+  });
+});
+
+describe('fines ledger & stats', () => {
+  test('ledger totals and stats', () => {
+    const m = member('Asha');
+    const i = issue(m, book());
+    advance(16);
+    ret(i); // ₹10
+    let f = lib.listFines();
+    assert.equal(f.totals.outstanding, 10);
+    assert.equal(f.totals.members_owing, 1);
+    assert.equal(lib.listFines({ status: 'unpaid' }).rows.length, 1);
+    lib.payFines(m.id);
+    f = lib.listFines();
+    assert.equal(f.totals.collected, 10);
+    assert.equal(f.totals.collected_this_month, 10);
+    assert.equal(lib.listFines({ status: 'unpaid' }).rows.length, 0);
+
+    const s = lib.stats();
+    assert.equal(s.activity.length, 14);
+    assert.equal(s.activity.at(-1).date, clock);
+    assert.equal(s.activity.at(-1).returned, 1);
+    assert.equal(s.onTimeRate, 0);
+    assert.ok(s.recent.some((e) => e.type === 'fine_paid'));
+    assert.equal(s.topBooks[0].loans, 1);
+  });
+
+  test('book history lists all loans', () => {
+    const b = book(1);
+    ret(issue(member(), b));
+    issue(member(), b);
+    assert.equal(lib.bookHistory(b.id).issues.length, 2);
+  });
+});
+
 describe('CSV', () => {
   test('parses quoted fields and header aliases', () => {
     const rows = parseBooksCsv('﻿Title,Author,ISBN,Category,Copies\r\n"Hello, World","O\'Neil ""Jr""",9780000000017,Tech,2\r\n\r\n');

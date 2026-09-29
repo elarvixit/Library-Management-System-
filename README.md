@@ -30,7 +30,29 @@ The database is stored in `data/library.db`. Set `DB_FILE` to use a different fi
 | Dashboard: issued today, overdue loans with fines, pending reservations, ready for pickup | **Dashboard** |
 | ⭐ SQLite backend + REST API | `src/` |
 | ⭐ Export the overdue list to CSV | Dashboard → *Export CSV* |
-| ⭐ Bulk-import books from CSV (per-row error report) | Books → *Import CSV* (see `sample-data/books.csv`) |
+| ⭐ Bulk-import books from CSV (preview first, per-row error report, downloadable template) | Books → *Import CSV* (see `sample-data/books.csv`) |
+
+### Extra features
+
+- **Dashboard analytics:**
+  - 14-day chart of books issued and returned (hover for daily figures)
+  - Share of copies in use and the on-time return rate
+  - Fines collected this month
+  - Most popular categories and most borrowed books
+  - A *Needs attention* panel (overdue, due soon, ready for pickup) and a live activity feed
+- **Renew loans:** extends the due date to today + 14 days, up to 2 times. It is refused when the loan is overdue, the member has unpaid fines, or someone is waiting in the reservation queue. The UI disables the button and shows the reason.
+- **Fines ledger:** outstanding and collected totals, paid/unpaid filter, collect from the list, CSV export.
+- **Activity page:** a timeline of every loan, return, reservation, hold expiry and payment, filterable by type.
+- **Command palette (`Ctrl K`):** search books, members and actions from anywhere. Keyboard shortcuts: `/` search, `I` issue, `R` return, `B` books, `M` members, `D` dashboard, `?` help.
+- **Notifications bell:** holds expiring today, overdue loans, copies ready for pickup, books due today, members with fines.
+- **Detail panels:**
+  - A book's current borrowers, reservation queue, next due-back date and full loan history
+  - A member's loans, reservations, history, on-time rate and fines paid
+- **Printables:** loan slip after issuing, return receipt, member library card.
+- **Books:** table or grid view, sort options, category filter, pagination, search matches highlighted.
+- **Members:** filters (active, inactive, with fines, borrowing), sort options, pagination, CSV export.
+- **Reservations:** expected back date, pickup countdown, *copy pickup message* button to send to the member.
+- **Design:** light/dark theme and a responsive phone layout.
 
 ## Business rules and how they are enforced
 
@@ -94,6 +116,12 @@ The test suite checks this invariant after every test.
 | GET | `/api/issues?status=active\|overdue\|returned\|all` | List loans |
 | POST | `/api/issues` | `{ memberId, bookId, issuedOn?, dueOn? }` |
 | POST | `/api/issues/:id/return` | `{ returnedOn? }` → returns `fine`, `daysLate`, `readyFor` |
+| POST | `/api/issues/:id/renew` | Extend a loan (see renewal rules) |
+| GET | `/api/books/:id/history` | Every loan of one book |
+| GET | `/api/fines?status=unpaid\|paid\|all` | Fines ledger with totals |
+| GET | `/api/stats` | Dashboard analytics (14-day activity, categories, top books, due soon, recent activity) |
+| GET | `/api/activity?limit=` | Activity timeline |
+| GET | `/api/reports/books.csv`, `members.csv`, `fines.csv`, `books-template.csv` | CSV exports and the import template |
 | GET | `/api/reservations?status=open\|waiting\|ready\|closed\|all` | List reservations with queue position |
 | POST | `/api/reservations` | `{ memberId, bookId }` |
 | POST | `/api/reservations/:id/cancel` | Cancel a reservation (a held copy moves to the next person) |

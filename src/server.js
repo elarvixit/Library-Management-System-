@@ -23,14 +23,38 @@ export function createApp(lib) {
     }
   };
 
-  // Dashboard
+  // Dashboard & analytics
   app.get('/api/dashboard', h(() => lib.dashboard()));
+  app.get('/api/stats', h((req) => lib.stats({ days: Math.min(90, Math.max(7, Number(req.query.days) || 14)) })));
+  app.get('/api/activity', h((req) => lib.recentActivity(Math.min(200, Number(req.query.limit) || 50))));
+  app.get('/api/fines', h((req) => lib.listFines({ status: req.query.status || 'all' })));
+
+  const sendCsv = (res, name, headers, rows) => {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}-${lib.today()}.csv"`);
+    res.send(`﻿${toCsv(headers, rows)}`);
+  };
+  app.get('/api/reports/books.csv', (req, res) => sendCsv(res, 'books',
+    ['title', 'author', 'isbn', 'category', 'total_copies', 'available_copies', 'on_loan', 'held', 'waiting'],
+    lib.searchBooks({}).map((b) => [b.title, b.author, b.isbn, b.category, b.total_copies, b.available_copies, b.issued_copies, b.held_copies, b.queue_length])));
+  app.get('/api/reports/members.csv', (req, res) => sendCsv(res, 'members',
+    ['Member ID', 'Name', 'Phone', 'Email', 'Join date', 'Status', 'Books on loan', 'Unpaid fines (INR)'],
+    lib.listMembers({}).map((m) => [m.member_code, m.name, m.phone, m.email, m.join_date, m.active ? 'Active' : 'Inactive', m.active_issues, m.unpaid_fines])));
+  app.get('/api/reports/fines.csv', (req, res) => sendCsv(res, 'fines',
+    ['Member ID', 'Member name', 'Book title', 'Due on', 'Returned on', 'Fine (INR)', 'Status', 'Paid on'],
+    lib.listFines({}).rows.map((r) => [r.member_code, r.member_name, r.title, r.due_on, r.returned_on, r.fine, r.fine_paid ? 'Paid' : 'Unpaid', r.paid_on])));
+  app.get('/api/reports/books-template.csv', (req, res) => {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="books-import-template.csv"');
+    res.send('title,author,isbn,category,total_copies\r\nThe Hobbit,J.R.R. Tolkien,9780261102217,Fantasy,3\r\n');
+  });
 
   // Books
   app.get('/api/books', h((req) => lib.searchBooks({
     q: req.query.q, field: req.query.field || 'all', availableOnly: req.query.available,
   })));
   app.get('/api/books/:id', h((req) => lib.getBook(req.params.id)));
+  app.get('/api/books/:id/history', h((req) => lib.bookHistory(req.params.id)));
   app.post('/api/books', h((req) => lib.addBook(req.body ?? {}), 201));
   app.put('/api/books/:id', h((req) => lib.updateBook(req.params.id, req.body ?? {})));
   app.delete('/api/books/:id', h((req) => lib.deleteBook(req.params.id)));
@@ -52,6 +76,7 @@ export function createApp(lib) {
   app.get('/api/issues', h((req) => lib.listIssues({ status: req.query.status || 'active' })));
   app.post('/api/issues', h((req) => lib.issueBook(req.body ?? {}), 201));
   app.post('/api/issues/:id/return', h((req) => lib.returnBook(req.params.id, req.body ?? {})));
+  app.post('/api/issues/:id/renew', h((req) => lib.renewIssue(req.params.id)));
 
   // Reservations
   app.get('/api/reservations', h((req) => lib.listReservations({ status: req.query.status || 'open' })));
