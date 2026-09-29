@@ -1321,6 +1321,7 @@ function showShortcuts() {
       <div><span>Return a book</span><kbd>R</kbd></div>
       <div><span>Go to Books / Members</span><span><kbd>B</kbd> <kbd>M</kbd></span></div>
       <div><span>Go to Dashboard</span><kbd>D</kbd></div>
+      <div><span>Open the Library Assistant</span><kbd>A</kbd></div>
       <div><span>Close panel or dialog</span><kbd>Esc</kbd></div>
       <div><span>Show this list</span><kbd>?</kbd></div></div>`,
   });

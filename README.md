@@ -43,6 +43,12 @@ The database is stored in `data/library.db`. Set `DB_FILE` to use a different fi
 - **Renew loans:** extends the due date to today + 14 days, up to 2 times. It is refused when the loan is overdue, the member has unpaid fines, or someone is waiting in the reservation queue. The UI disables the button and shows the reason.
 - **Fines ledger:** outstanding and collected totals, paid/unpaid filter, collect from the list, CSV export.
 - **Activity page:** a timeline of every loan, return, reservation, hold expiry and payment, filterable by type.
+- **Library Assistant (help chat):** click *Ask assistant* (bottom right) or press `A`. It answers questions from the live library data, for example:
+  - *"Can Ravi borrow Dune?"*: runs the same checks as the Issue screen (fines, 3-book limit, reservation queue, availability) and explains the result
+  - *"Who has The Hobbit?"*, *"What's overdue?"*, *"Who owes fines?"*
+  - *"How are fines calculated?"*, *"How do I renew a loan?"*
+
+  It is **read-only**. Answers include shortcut buttons (open member, collect fine, go to Issue), and every action still goes through the normal screens and confirmations. It runs entirely in the browser, with no external AI service and no API key. All logic is in `public/assistant.js`, and its `answer()` function could later be replaced by an LLM call.
 - **Command palette (`Ctrl K`):** search books, members and actions from anywhere. Keyboard shortcuts: `/` search, `I` issue, `R` return, `B` books, `M` members, `D` dashboard, `?` help.
 - **Notifications bell:** holds expiring today, overdue loans, copies ready for pickup, books due today, members with fines.
 - **Detail panels:**
