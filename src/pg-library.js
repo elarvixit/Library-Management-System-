@@ -58,8 +58,17 @@ export class PgLibrary {
    * @param {{ timeZone?: string, pool?: { connect(): Promise<any> } }} [opts] `pool` lets tests inject a client pool
    */
   constructor(connectionString, { timeZone = process.env.LIBRARY_TIMEZONE || 'Asia/Kolkata', pool } = {}) {
-    if (pool) this.pool = pool;
-    else {
+    this.timeZone = timeZone;
+    if (pool) { this.pool = pool; return; }
+    // Common mistake: pasting the Supabase "Data API" project URL (https://….supabase.co) instead of the
+    // database connection string. Report it clearly instead of failing with an obscure driver error.
+    if (!/^postgres(ql)?:\/\//i.test(connectionString)) {
+      this.configError = new LibraryError('DATABASE_URL is not a PostgreSQL connection string. In Supabase click Connect → '
+        + '"Transaction pooler" and copy the URI that starts with postgresql:// (not the https://…supabase.co project URL).', 500);
+      console.error(this.configError.message);
+      return;
+    }
+    {
       const local = /@(localhost|127\.0\.0\.1)[:/]/.test(connectionString);
       this.pool = new pg.Pool({
         connectionString,
@@ -70,7 +79,6 @@ export class PgLibrary {
       // Supabase/pgbouncer may close idle connections; without this handler that would crash the server.
       this.pool.on('error', (err) => console.warn('PostgreSQL idle connection closed:', err.message));
     }
-    this.timeZone = timeZone;
   }
 
   /** Library-local date (used for CSV file names). */
@@ -80,7 +88,16 @@ export class PgLibrary {
 
   /** Runs fn(tx) in a transaction with the library's time zone, after expiring stale holds. */
   async tx(fn) {
-    const client = await this.pool.connect();
+    if (this.configError) throw this.configError;
+    let client;
+    try {
+      client = await this.pool.connect();
+    } catch (err) {
+      console.error('Could not connect to PostgreSQL:', err.message);
+      throw new LibraryError(/password authentication/i.test(err.message)
+        ? 'Could not sign in to the database: the password in DATABASE_URL is wrong.'
+        : `Could not connect to the database (${err.code || err.message}). Check DATABASE_URL.`, 500);
+    }
     try {
       await client.query('begin');
       await client.query(`select set_config('TimeZone', $1, true)`, [this.timeZone]);
