@@ -173,7 +173,7 @@ The `supabase/` folder contains the same data model and business rules for Supab
 | `seed.sql` | Demo data: 60 members, 33 books, loans, an unpaid fine, a queue and a held copy (dates relative to today) |
 | `queries.sql` | Everyday queries (dashboard, search, fines, due soon, who has a book, health check) and write examples |
 
-**Setup:** in the Supabase dashboard open **SQL Editor → New query**, then paste and **Run** `schema.sql`, `functions.sql` and `seed.sql`, in that order. Only the server should call the write functions, using the `service_role` key or the database connection string. Never put that key in browser code.
+**Setup:** in the Supabase dashboard open **SQL Editor → New query**, paste **`supabase/setup.sql`** (schema + functions + demo data in one file) and click **Run**. Or run `schema.sql`, `functions.sql` and `seed.sql` separately, in that order. Only the server should call the write functions, using the `service_role` key or the database connection string. Never put that key in browser code.
 
 All four scripts were tested against PostgreSQL (PGlite): the queue order, the 3-book limit, fines blocking issues, the ₹5/day fine, 2-day hold expiry passing the copy on, and delete refusal.
 
