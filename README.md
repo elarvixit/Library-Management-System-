@@ -161,3 +161,18 @@ sample-data/      example CSV for bulk import
 - **"Notified"** means the member appears on the dashboard's *Ready for pickup* list and a message is shown to the librarian. There is no email or SMS.
 - **"First in the queue"** means the earliest reservation still *waiting* for a copy. People who already have a copy held for them have been served, so their held copies are never given to anyone else.
 - **Books that are overdue but not yet returned** do not block new issues. Only *recorded* (returned) unpaid fines do, as the spec states. The overdue list shows the fine building up so the librarian can follow up.
+
+## Supabase (PostgreSQL) scripts
+
+The `supabase/` folder contains the same data model and business rules for Supabase:
+
+| File | What it does |
+|---|---|
+| `schema.sql` | Tables, constraints and indexes, with Row Level Security switched on (no public access) |
+| `functions.sql` | The rules as SQL functions (`issue_book`, `return_book`, `renew_issue`, `reserve_book`, `cancel_reservation`, `pay_fines`, `delete_book`, `expire_holds`) plus dashboard views (`v_dashboard`, `v_overdue`, `v_ready_for_pickup`, `v_pending_reservations`, …) |
+| `seed.sql` | Demo data: 60 members, 33 books, loans, an unpaid fine, a queue and a held copy (dates relative to today) |
+| `queries.sql` | Everyday queries (dashboard, search, fines, due soon, who has a book, health check) and write examples |
+
+**Setup:** in the Supabase dashboard open **SQL Editor → New query**, then paste and **Run** `schema.sql`, `functions.sql` and `seed.sql`, in that order. Only the server should call the write functions, using the `service_role` key or the database connection string. Never put that key in browser code.
+
+All four scripts were tested against PostgreSQL (PGlite): the queue order, the 3-book limit, fines blocking issues, the ₹5/day fine, 2-day hold expiry passing the copy on, and delete refusal.
