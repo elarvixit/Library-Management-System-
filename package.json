@@ -1,0 +1,20 @@
+{
+  "name": "library-management-system",
+  "version": "1.0.0",
+  "description": "Librarian's tool to manage books, members, issues, returns, fines and reservations (Node.js + SQLite + REST API).",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed": "node scripts/seed.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "license": "MIT"
+}

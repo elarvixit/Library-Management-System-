@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Library Management System</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">📚</span>
+      <div>
+        <h1>Library Management System</h1>
+        <p class="sub">Librarian console · <span id="today"></span></p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-view="dashboard">Dashboard</button>
+      <button class="tab" data-view="books">Books</button>
+      <button class="tab" data-view="members">Members</button>
+      <button class="tab" data-view="circulation">Issue &amp; Return</button>
+      <button class="tab" data-view="reservations">Reservations</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- DASHBOARD -->
+    <section id="view-dashboard" class="view active">
+      <div class="stats" id="stats"></div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-head"><h2>Ready for pickup</h2><span class="hint">Copies held for 2 days for the first person in the queue</span></div>
+          <div id="dash-ready"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Pending reservations</h2><span class="hint">Waiting for a copy to be returned</span></div>
+          <div id="dash-pending"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Overdue</h2>
+          <span class="hint">Fine accrues at ₹5 per day late</span>
+          <a class="btn small" href="/api/reports/overdue.csv" download>⬇ Export CSV</a>
+        </div>
+        <div id="dash-overdue"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Issued today</h2></div>
+        <div id="dash-today"></div>
+      </div>
+    </section>
+
+    <!-- BOOKS -->
+    <section id="view-books" class="view">
+      <div class="card">
+        <form id="book-search" class="toolbar">
+          <input type="search" name="q" placeholder="Search books…" aria-label="Search books">
+          <select name="field" aria-label="Search in">
+            <option value="all">All fields</option>
+            <option value="title">Title</option>
+            <option value="author">Author</option>
+            <option value="isbn">ISBN</option>
+            <option value="category">Category</option>
+          </select>
+          <label class="check"><input type="checkbox" name="available"> Available only</label>
+          <span class="spacer"></span>
+          <button type="button" class="btn" id="btn-import">⬆ Import CSV</button>
+          <button type="button" class="btn primary" id="btn-add-book">+ Add book</button>
+          <input type="file" id="import-file" accept=".csv,text/csv" hidden>
+        </form>
+        <div id="books-table"></div>
+      </div>
+    </section>
+
+    <!-- MEMBERS -->
+    <section id="view-members" class="view">
+      <div class="card">
+        <form id="member-search" class="toolbar">
+          <input type="search" name="q" placeholder="Search by name, member ID, phone or email…" aria-label="Search members">
+          <label class="check"><input type="checkbox" name="active"> Active only</label>
+          <span class="spacer"></span>
+          <button type="button" class="btn primary" id="btn-add-member">+ Add member</button>
+        </form>
+        <div id="members-table"></div>
+      </div>
+    </section>
+
+    <!-- CIRCULATION -->
+    <section id="view-circulation" class="view">
+      <div class="card">
+        <div class="card-head"><h2>Issue a book</h2><span class="hint">Max 3 books per member · default loan 14 days</span></div>
+        <form id="issue-form" class="form-grid">
+          <label>Member<select name="memberId" required></select></label>
+          <label>Book<select name="bookId" required></select></label>
+          <label>Issue date<input type="date" name="issuedOn" required></label>
+          <label>Due date<input type="date" name="dueOn" required></label>
+          <div class="form-actions"><button class="btn primary" type="submit">Issue book</button></div>
+          <div id="issue-check" class="check-panel full"></div>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Books on loan</h2>
+          <select id="loan-filter" aria-label="Filter loans">
+            <option value="active">On loan</option>
+            <option value="overdue">Overdue</option>
+            <option value="returned">Returned</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+        <div id="loans-table"></div>
+      </div>
+    </section>
+
+    <!-- RESERVATIONS -->
+    <section id="view-reservations" class="view">
+      <div class="card">
+        <div class="card-head"><h2>Reserve a book</h2><span class="hint">Only books with no available copy can be reserved</span></div>
+        <form id="reserve-form" class="form-grid">
+          <label>Member<select name="memberId" required></select></label>
+          <label>Book<select name="bookId" required></select></label>
+          <div class="form-actions"><button class="btn primary" type="submit">Place reservation</button></div>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Reservations</h2>
+          <select id="res-filter" aria-label="Filter reservations">
+            <option value="open">Open (waiting + ready)</option>
+            <option value="ready">Ready for pickup</option>
+            <option value="waiting">Waiting</option>
+            <option value="closed">Closed</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+        <div id="res-table"></div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="modal">
+    <form method="dialog" id="modal-form">
+      <h2 id="modal-title"></h2>
+      <div id="modal-body"></div>
+      <p id="modal-error" class="error" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="modal-cancel">Cancel</button>
+        <button type="submit" class="btn primary" id="modal-ok">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toasts" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
