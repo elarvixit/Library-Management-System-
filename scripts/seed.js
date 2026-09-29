@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { openDb } from '../src/db.js';
 import { Library, addDays, localToday } from '../src/library.js';
 import { parseBooksCsv } from '../src/csv.js';
+import { SAMPLE_MEMBERS, emailFor } from './sample-members.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dbFile = process.env.DB_FILE || path.join(root, 'data', 'library.db');
@@ -51,5 +52,12 @@ lib.returnBook(lib.listIssues().find((i) => i.title === 'Atomic Habits').id);
 // Today
 clock = today;
 lib.issueBook({ memberId: m.arjun.id, bookId: book('Sapiens').id });
+
+// More members (some borrowing) so lists, search and the assistant have realistic data.
+const extra = SAMPLE_MEMBERS.map(([name, phone, joined, active]) =>
+  lib.addMember({ name, phone, email: emailFor(name), join_date: addDays(today, -joined), active }));
+lib.issueBook({ memberId: extra[0].id, bookId: book('Clean Code').id });
+lib.issueBook({ memberId: extra[1].id, bookId: book('Wings of Fire').id });
+lib.issueBook({ memberId: extra[2].id, bookId: book('The God of Small Things').id });
 
 console.log(`Seeded demo data into ${dbFile}`);

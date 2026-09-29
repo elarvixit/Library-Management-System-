@@ -134,7 +134,6 @@ async function refreshAll() {
     `Holds kept ${RULES.HOLD_DAYS} days`, `Up to ${RULES.MAX_RENEWALS} renewals`,
   ].map((r) => `<li>${esc(r)}</li>`).join('');
   $$('.js-loan-days').forEach((el) => { el.textContent = RULES.LOAN_DAYS; });
-  $('#loan-count').textContent = loans.length;
   renderBell();
   for (const p of Object.values(pickers)) p.refresh();
   updateIssuePanel();
@@ -333,7 +332,8 @@ function availBadge(b) {
 const PAGES = {
   dashboard: { title: 'Dashboard', sub: () => `${greeting()} Here's what's happening at the library today.` },
   activity: { title: 'Activity', sub: () => 'Every loan, return, reservation and payment, newest first.' },
-  circulation: { title: 'Issue & Return', sub: () => `${plural(state.loans.length, 'book')} on loan · ${plural(state.dash?.stats.overdue ?? 0, 'overdue loan')}` },
+  issue: { title: 'Issue Book', sub: () => `Lend a book to a member · ${RULES.LOAN_DAYS}-day loans · max ${RULES.MAX_ACTIVE_ISSUES} books per member` },
+  returns: { title: 'Return Book', sub: () => `${plural(state.loans.length, 'book')} on loan · ${plural(state.dash?.stats.overdue ?? 0, 'overdue loan')} · ₹${RULES.FINE_PER_DAY}/day late fine` },
   reservations: { title: 'Reservations', sub: () => `${plural(state.dash?.stats.ready_for_pickup ?? 0, 'copy', 'copies')} ready for pickup · ${plural(state.dash?.stats.pending_reservations ?? 0, 'member')} waiting` },
   fines: { title: 'Fines', sub: () => `Late fees are ₹${RULES.FINE_PER_DAY} per day. Unpaid fines block new issues.` },
   books: { title: 'Books', sub: () => `${plural(state.dash?.stats.titles ?? 0, 'title')} · ${plural(state.dash?.stats.copies ?? 0, 'copy', 'copies')} · ${state.dash?.stats.available ?? 0} on the shelf` },
@@ -349,7 +349,8 @@ function pageActions(view) {
   return {
     dashboard: `${actBtn('go-return', 'arrowIn', 'Return book')}${actBtn('go-issue', 'arrowOut', 'Issue book', 'primary')}`,
     activity: '',
-    circulation: `${linkBtn('/api/reports/overdue.csv', 'download', 'Overdue CSV')}${actBtn('go-reserve', 'bookmark', 'Reserve')}`,
+    issue: `${actBtn('go-reserve', 'bookmark', 'Reserve instead')}${actBtn('go-return', 'arrowIn', 'Return Book')}`,
+    returns: `${linkBtn('/api/reports/overdue.csv', 'download', 'Overdue CSV')}${actBtn('go-issue', 'arrowOut', 'Issue Book', 'primary')}`,
     reservations: '',
     fines: linkBtn('/api/reports/fines.csv', 'download', 'Export CSV'),
     books: `${linkBtn('/api/reports/books-template.csv', 'file', 'Template')}${actBtn('import', 'upload', 'Import CSV')}${linkBtn('/api/reports/books.csv', 'download', 'Export')}${actBtn('add-book', 'plus', 'Add book', 'primary')}`,
@@ -358,9 +359,9 @@ function pageActions(view) {
 }
 
 function route() {
-  const [view, tab] = location.hash.replace(/^#\/?/, '').split('/');
+  let [view, tab] = location.hash.replace(/^#\/?/, '').split('/');
+  if (view === 'circulation') view = tab === 'return' ? 'returns' : 'issue'; // old links
   ui.view = PAGES[view] ? view : 'dashboard';
-  if (ui.view === 'circulation' && (tab === 'issue' || tab === 'return')) ui.circTab = tab;
   for (const a of $$('.nav-item')) a.classList.toggle('on', a.dataset.view === ui.view);
   for (const v of $$('.view')) v.classList.toggle('on', v.id === `view-${ui.view}`);
   $('#sidebar').classList.remove('open');
@@ -754,12 +755,17 @@ function loanActions(l, compact = false) {
     <button class="btn sm primary" data-act="return" data-id="${l.id}">${icon('arrowIn')}Return</button></div>`;
 }
 
-renderers.circulation = async () => {
-  for (const b of $$('#circ-tabs button')) b.classList.toggle('on', b.dataset.tab === ui.circTab);
-  $('#circ-issue').hidden = ui.circTab !== 'issue';
-  $('#circ-return').hidden = ui.circTab !== 'return';
+renderers.issue = async () => { updateIssuePanel(); };
+
+renderers.returns = async () => {
   for (const b of $$('#loan-filter button')) b.classList.toggle('on', b.dataset.v === ui.loanFilter);
-  if (ui.circTab === 'issue') { updateIssuePanel(); return; }
+  const overdue = state.loans.filter((l) => l.overdue);
+  const dueSoon = state.loans.filter((l) => !l.overdue && daysBetween(TODAY, l.due_on) <= RULES.DUE_SOON_DAYS);
+  const stat = (n, label, tone, filter) => `<button class="rs ${ui.loanFilter === filter ? 'on' : ''}" data-v="${filter}"><b class="${tone}">${n}</b><span>${label}</span></button>`;
+  $('#return-stats').innerHTML = `<div class="segmented-stats" id="loan-filter-stats">
+    ${stat(state.loans.length, 'on loan', '', 'active')}${stat(overdue.length, 'overdue', overdue.length ? 't-red' : '', 'overdue')}
+    ${stat(dueSoon.length, 'due soon', dueSoon.length ? 't-amber' : '', 'due-soon')}
+    ${stat(rupees(overdue.reduce((t, l) => t + l.accrued_fine, 0)), 'fines accruing', overdue.length ? 't-red' : '', 'overdue')}</div>`;
 
   let rows;
   if (ui.loanFilter === 'active') rows = state.loans;
@@ -1238,10 +1244,10 @@ function notifications() {
   const out = [];
   const lastDay = d.readyForPickup.filter((r) => r.hold_until === TODAY);
   if (lastDay.length) out.push({ ic: 'clock', tone: 'tone-red', title: `${plural(lastDay.length, 'hold')} expire${lastDay.length === 1 ? 's' : ''} today`, sub: lastDay.map((r) => `${r.member_name} · ${r.title}`).join(', '), go: () => go('reservations') });
-  if (d.overdue.length) out.push({ ic: 'alert', tone: 'tone-red', title: `${plural(d.overdue.length, 'book')} overdue`, sub: `${rupees(d.stats.overdue_fines_accruing)} in fines accruing`, go: () => { ui.loanFilter = 'overdue'; go('circulation', 'return'); } });
+  if (d.overdue.length) out.push({ ic: 'alert', tone: 'tone-red', title: `${plural(d.overdue.length, 'book')} overdue`, sub: `${rupees(d.stats.overdue_fines_accruing)} in fines accruing`, go: () => { ui.loanFilter = 'overdue'; go('returns'); } });
   if (d.readyForPickup.length) out.push({ ic: 'inbox', tone: 'tone-green', title: `${plural(d.readyForPickup.length, 'copy', 'copies')} ready for pickup`, sub: d.readyForPickup.map((r) => r.member_name).join(', '), go: () => go('reservations') });
   const dueToday = (st?.dueSoon || []).filter((l) => l.due_on === TODAY);
-  if (dueToday.length) out.push({ ic: 'calendar', tone: 'tone-amber', title: `${plural(dueToday.length, 'book')} due back today`, sub: dueToday.map((l) => l.title).join(', '), go: () => { ui.loanFilter = 'due-soon'; go('circulation', 'return'); } });
+  if (dueToday.length) out.push({ ic: 'calendar', tone: 'tone-amber', title: `${plural(dueToday.length, 'book')} due back today`, sub: dueToday.map((l) => l.title).join(', '), go: () => { ui.loanFilter = 'due-soon'; go('returns'); } });
   const owing = state.members.filter((m) => m.unpaid_fines > 0);
   if (owing.length) out.push({ ic: 'wallet', tone: 'tone-amber', title: `${plural(owing.length, 'member')} with unpaid fines`, sub: `${rupees(d.stats.unpaid_fines)} outstanding`, go: () => { ui.fineFilter = 'unpaid'; go('fines'); } });
   return out;
@@ -1257,13 +1263,13 @@ function renderBell() {
 
 // ===================================================================== command palette
 const COMMANDS = [
-  { label: 'Issue a book', ic: 'arrowOut', kw: 'lend checkout loan', run: () => go('circulation', 'issue') },
-  { label: 'Return a book', ic: 'arrowIn', kw: 'check in', run: () => { ui.loanFilter = 'active'; go('circulation', 'return'); } },
+  { label: 'Issue a book', ic: 'arrowOut', kw: 'lend checkout loan', run: () => go('issue') },
+  { label: 'Return a book', ic: 'arrowIn', kw: 'check in', run: () => { ui.loanFilter = 'active'; go('returns'); } },
   { label: 'Add a book', ic: 'plus', kw: 'new title catalogue', run: () => { go('books'); addBook(); } },
   { label: 'Add a member', ic: 'userPlus', kw: 'new register reader', run: () => { go('members'); addMember(); } },
   { label: 'New reservation', ic: 'bookmark', kw: 'reserve hold queue', run: () => go('reservations') },
   { label: 'Import books from CSV', ic: 'upload', kw: 'bulk upload', run: () => { go('books'); $('#import-file').click(); } },
-  { label: 'View overdue loans', ic: 'alert', kw: 'late', run: () => { ui.loanFilter = 'overdue'; go('circulation', 'return'); } },
+  { label: 'View overdue loans', ic: 'alert', kw: 'late', run: () => { ui.loanFilter = 'overdue'; go('returns'); } },
   { label: 'Collect fines', ic: 'wallet', kw: 'pay unpaid', run: () => { ui.fineFilter = 'unpaid'; go('fines'); } },
   { label: 'Go to Dashboard', ic: 'grid', kw: 'home overview', run: () => go('dashboard') },
   { label: 'Go to Activity', ic: 'activity', kw: 'log history timeline', run: () => go('activity') },
@@ -1349,13 +1355,13 @@ document.addEventListener('click', (e) => {
   if (btn && !btn.disabled) {
     const num = (k = 'id') => Number(btn.dataset[k]);
     const acts = {
-      'go-issue': () => go('circulation', 'issue'),
-      'go-return': () => { ui.loanFilter = 'active'; go('circulation', 'return'); },
+      'go-issue': () => go('issue'),
+      'go-return': () => { ui.loanFilter = 'active'; go('returns'); },
       'go-reserve': () => go('reservations'),
       kpi: () => {
         const t = btn.dataset.target;
-        if (t === 'overdue') { ui.loanFilter = 'overdue'; go('circulation', 'return'); }
-        else if (t === 'loans') { ui.loanFilter = 'active'; go('circulation', 'return'); }
+        if (t === 'overdue') { ui.loanFilter = 'overdue'; go('returns'); }
+        else if (t === 'loans') { ui.loanFilter = 'active'; go('returns'); }
         else if (t === 'fines') { ui.fineFilter = 'unpaid'; go('fines'); }
         else go(t);
       },
@@ -1365,13 +1371,13 @@ document.addEventListener('click', (e) => {
       'edit-book': () => editBook(num()),
       'delete-book': () => deleteBook(num()),
       'view-book': () => openDrawer(() => bookDrawer(num())),
-      'issue-book': () => { closeDrawer(); closeModal(); go('circulation', 'issue'); pickers['pk-issue-book'].setByKey(num('book')); if (!pickers['pk-issue-member'].item) setTimeout(() => pickers['pk-issue-member'].focus(), 60); },
+      'issue-book': () => { closeDrawer(); closeModal(); go('issue'); pickers['pk-issue-book'].setByKey(num('book')); if (!pickers['pk-issue-member'].item) setTimeout(() => pickers['pk-issue-member'].focus(), 60); },
       'reserve-book': () => { closeDrawer(); go('reservations'); pickers['pk-res-book'].setByKey(num('book')); setTimeout(() => pickers['pk-res-member'].focus(), 60); },
       'reserve-this': () => { const m = pickers['pk-issue-member'].item; const b = pickers['pk-issue-book'].item; go('reservations'); if (m) pickers['pk-res-member'].set(m); if (b) pickers['pk-res-book'].setByKey(b.id); },
       'add-member': addMember,
       'edit-member': () => editMember(num()),
       'view-member': () => openDrawer(() => memberDrawer(num())),
-      'issue-to': () => { closeDrawer(); go('circulation', 'issue'); pickers['pk-issue-member'].setByKey(num()); setTimeout(() => pickers['pk-issue-book'].focus(), 60); },
+      'issue-to': () => { closeDrawer(); go('issue'); pickers['pk-issue-member'].setByKey(num()); setTimeout(() => pickers['pk-issue-book'].focus(), 60); },
       'print-card': () => { const m = state.members.find((x) => x.id === num()); if (m) printDoc(memberCard(m)); },
       'print-last': () => printDoc(lastPrint),
       pay: () => { closeModal(); payFine(num()); },
@@ -1420,7 +1426,7 @@ document.addEventListener('click', (e) => {
   $$('#attn-tabs button').forEach((b) => b.classList.toggle('on', b === t));
   $('#attn-body').innerHTML = renderAttention(ui.attn, rows);
 });
-$('#circ-tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) go('circulation', b.dataset.tab); });
+segmented('#loan-filter-stats', 'loanFilter');
 
 let debounce;
 const onSearch = (pageKey) => () => { clearTimeout(debounce); debounce = setTimeout(() => { if (pageKey) ui[pageKey] = 1; render().catch(fail); }, 160); };
@@ -1474,8 +1480,8 @@ document.addEventListener('keydown', (e) => {
     const s = $(`#view-${ui.view} [data-slash]`) || $(`#view-${ui.view} .picker-input`);
     if (s) { e.preventDefault(); s.focus(); } else { e.preventDefault(); openPalette(); }
   } else if (k === '?') { e.preventDefault(); showShortcuts(); }
-  else if (k === 'i' || k === 'I') { e.preventDefault(); closeDrawer(); go('circulation', 'issue'); setTimeout(() => pickers['pk-issue-member'].focus(), 60); }
-  else if (k === 'r' || k === 'R') { e.preventDefault(); closeDrawer(); ui.loanFilter = 'active'; go('circulation', 'return'); setTimeout(() => $('#loan-q').focus(), 60); }
+  else if (k === 'i' || k === 'I') { e.preventDefault(); closeDrawer(); go('issue'); setTimeout(() => pickers['pk-issue-member'].focus(), 60); }
+  else if (k === 'r' || k === 'R') { e.preventDefault(); closeDrawer(); ui.loanFilter = 'active'; go('returns'); setTimeout(() => $('#loan-q').focus(), 60); }
   else if (k === 'b' || k === 'B') { closeDrawer(); go('books'); }
   else if (k === 'm' || k === 'M') { closeDrawer(); go('members'); }
   else if (k === 'd' || k === 'D') { closeDrawer(); go('dashboard'); }

@@ -11,6 +11,7 @@ Requires **Node.js 22.13 or later** (it uses the built-in `node:sqlite` module, 
 ```bash
 npm install
 npm run seed     # optional: demo data (overdue loans, fines, a queue, a copy ready for pickup)
+npm run add-members  # optional: add 24 sample members to a running library
 npm start        # http://localhost:3000
 npm test         # business-rule test suite
 ```
@@ -23,8 +24,8 @@ The database is stored in `data/library.db`. Set `DB_FILE` to use a different fi
 |---|---|
 | Books: add / edit / delete (title, author, ISBN, category, total copies, available copies) | **Books** tab |
 | Members: add / edit (name, member ID, phone, email, join date, active/inactive) | **Members** tab |
-| Issue a book (member + book, default due date 14 days, live rule check) | **Issue & Return** tab |
-| Return a book with a late-fine preview; the fine is recorded against the member | **Issue & Return**, **Dashboard** |
+| Issue a book (member + book, default due date 14 days, live rule check) | **Issue Book** page |
+| Return a book with a late-fine preview; the fine is recorded against the member | **Return Book** page, **Dashboard** |
 | Reservations queue, "Ready for pickup" list, 2-day hold | **Reservations**, **Dashboard** |
 | Search by title / author / ISBN / category, with an "available only" filter | **Books** tab |
 | Dashboard: issued today, overdue loans with fines, pending reservations, ready for pickup | **Dashboard** |

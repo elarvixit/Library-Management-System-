@@ -681,6 +681,28 @@ dialog::backdrop { background: rgba(16, 24, 40, .5); backdrop-filter: blur(3px);
 @keyframes as-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .5; } 30% { transform: translateY(-4px); opacity: 1; } }
 @media print { .as-fab, .as-panel { display: none !important; } }
 
+/* top-bar assistant button */
+.ai-top-btn { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px 0 10px; border-radius: 99px; border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--line)); background: linear-gradient(135deg, var(--primary-soft), var(--surface)); color: var(--primary); font-weight: 600; font-size: 13.5px; cursor: pointer; box-shadow: var(--shadow-xs); transition: box-shadow .15s, border-color .15s; }
+.ai-top-btn:hover, .ai-top-btn.on { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-ring); }
+.ai-spark { width: 24px; height: 24px; border-radius: 50%; color: #fff; background: linear-gradient(135deg, #818cf8, #4f46e5); }
+.ai-spark svg { width: 14px; height: 14px; }
+/* the assistant opened from the top bar drops down under it */
+.as-panel { top: 76px; bottom: auto; }
+
+/* return page header */
+.return-hero { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.return-hero .kpi-ico { width: 44px; height: 44px; }
+.return-hero .grow { flex: 1; min-width: 240px; }
+.return-hero .grow > b { display: block; font-size: 15px; }
+.return-hero small b { color: var(--text-2); }
+.return-hero small { color: var(--muted); font-size: 13px; }
+.segmented-stats { display: flex; gap: 8px; flex-wrap: wrap; }
+.rs { display: grid; text-align: left; gap: 0; padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); cursor: pointer; color: var(--text); min-width: 96px; }
+.rs b { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rs span { font-size: 12px; color: var(--muted); }
+.rs:hover { border-color: var(--line-2); }
+.rs.on { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-ring); background: var(--surface); }
+
 /* phone layout — kept last so it overrides the component rules above */
 @media (max-width: 640px) {
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -693,7 +715,9 @@ dialog::backdrop { background: rgba(16, 24, 40, .5); backdrop-filter: blur(3px);
   th:first-child, td:first-child { padding-left: 16px; }
   .as-fab { right: 16px; bottom: 16px; padding: 14px; }
   .as-fab span { display: none; }
-  .as-panel { right: 8px; left: 8px; bottom: 8px; width: auto; height: calc(100vh - 80px); }
+  .as-panel { right: 8px; left: 8px; top: 72px; bottom: 8px; width: auto; height: auto; }
+  .ai-top-text { display: none; }
+  .ai-top-btn { padding: 0 7px; }
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

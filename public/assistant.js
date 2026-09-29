@@ -443,6 +443,7 @@
     panel.hidden = false;
     fab.setAttribute('aria-expanded', 'true');
     fab.classList.add('hide');
+    $('#ai-top-btn')?.classList.add('on');
     if (!started) {
       started = true;
       const w = welcome();
@@ -455,9 +456,16 @@
     panel.hidden = true;
     fab.setAttribute('aria-expanded', 'false');
     fab.classList.remove('hide');
+    $('#ai-top-btn')?.classList.remove('on');
   }
 
   fab.addEventListener('click', open);
+  // Top-bar shortcut (the icon may have been hydrated before this file registered it)
+  const topBtn = $('#ai-top-btn');
+  if (topBtn) {
+    $('.ai-spark', topBtn).innerHTML = icon('sparkle');
+    topBtn.addEventListener('click', () => { if (panel.hidden) open(); else close(); });
+  }
   $('#as-close').addEventListener('click', close);
   $('#as-clear').addEventListener('click', () => { log.innerHTML = ''; started = false; open(); });
   $('#as-form').addEventListener('submit', (e) => { e.preventDefault(); ask(input.value); });
@@ -468,7 +476,7 @@
     if (n) {
       const to = n.dataset.nav;
       closeDrawer();
-      if (to === 'overdue' || to === 'loans' || to === 'due-soon') { ui.loanFilter = to === 'loans' ? 'active' : to; go('circulation', 'return'); }
+      if (to === 'overdue' || to === 'loans' || to === 'due-soon') { ui.loanFilter = to === 'loans' ? 'active' : to; go('returns'); }
       else if (to === 'fines') { ui.fineFilter = 'unpaid'; go('fines'); }
       else go(to);
       return;
@@ -480,7 +488,7 @@
     if (iss) {
       const [mid, bid] = iss.dataset.assistIssue.split(':').map(Number);
       closeDrawer();
-      go('circulation', 'issue');
+      go('issue');
       pickers['pk-issue-member'].setByKey(mid);
       pickers['pk-issue-book'].setByKey(bid);
     }

@@ -24,7 +24,8 @@
       <a href="#/dashboard" class="nav-item" data-view="dashboard"><span data-icon="grid"></span>Dashboard</a>
       <a href="#/activity" class="nav-item" data-view="activity"><span data-icon="activity"></span>Activity</a>
       <div class="nav-group">Circulation</div>
-      <a href="#/circulation/issue" class="nav-item" data-view="circulation"><span data-icon="repeat"></span>Issue &amp; Return<span class="nav-badge danger" id="nb-overdue" hidden></span></a>
+      <a href="#/issue" class="nav-item" data-view="issue"><span data-icon="arrowOut"></span>Issue Book</a>
+      <a href="#/returns" class="nav-item" data-view="returns"><span data-icon="arrowIn"></span>Return Book<span class="nav-badge danger" id="nb-overdue" hidden></span></a>
       <a href="#/reservations" class="nav-item" data-view="reservations"><span data-icon="bookmark"></span>Reservations<span class="nav-badge success" id="nb-ready" hidden></span></a>
       <a href="#/fines" class="nav-item" data-view="fines"><span data-icon="wallet"></span>Fines<span class="nav-badge warn" id="nb-fines" hidden></span></a>
       <div class="nav-group">Catalog</div>
@@ -50,6 +51,7 @@
         <span data-icon="search"></span><span class="st-text">Search books, members, actions…</span><kbd>Ctrl K</kbd>
       </button>
       <div class="top-actions">
+        <button class="ai-top-btn" id="ai-top-btn" type="button" aria-label="Open Library Assistant" title="Library Assistant (A)"><span class="ai-spark" data-icon="sparkle"></span><span class="ai-top-text">Assistant</span></button>
         <div class="bell-wrap">
           <button class="icon-btn" id="bell-btn" type="button" aria-label="Notifications" aria-haspopup="true"><span data-icon="bell"></span><span class="bell-dot" id="bell-dot" hidden></span></button>
           <div class="popover" id="bell-pop" hidden></div>
@@ -73,13 +75,8 @@
       <!-- ACTIVITY -->
       <section class="view" id="view-activity"></section>
 
-      <!-- CIRCULATION -->
-      <section class="view" id="view-circulation">
-        <div class="tabs" id="circ-tabs" role="tablist">
-          <button data-tab="issue" role="tab"><span data-icon="arrowOut"></span>Issue a book</button>
-          <button data-tab="return" role="tab"><span data-icon="arrowIn"></span>Loans &amp; returns<span class="tab-count" id="loan-count"></span></button>
-        </div>
-
+      <!-- ISSUE BOOK -->
+      <section class="view" id="view-issue">
         <div id="circ-issue" class="circ-pane">
           <form id="issue-form" class="issue-layout" autocomplete="off">
             <div class="card pad">
@@ -126,7 +123,16 @@
           </form>
         </div>
 
-        <div id="circ-return" class="circ-pane" hidden>
+      </section>
+
+      <!-- RETURN BOOK -->
+      <section class="view" id="view-returns">
+        <div class="return-hero card pad">
+          <span class="kpi-ico tone-green" data-icon="arrowIn"></span>
+          <div class="grow"><b>Return a book</b><small>Search by member name, member ID, title or ISBN, then click <b>Return</b>. Late fines are calculated automatically.</small></div>
+          <div class="return-stats" id="return-stats"></div>
+        </div>
+        <div id="circ-return" class="circ-pane">
           <div class="card">
             <div class="card-toolbar">
               <div class="search"><span data-icon="search"></span><input id="loan-q" type="search" placeholder="Find a loan by member, book or ISBN…" data-slash></div>
