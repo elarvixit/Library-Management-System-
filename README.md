@@ -49,6 +49,8 @@ The database is stored in `data/library.db`. Set `DB_FILE` to use a different fi
   - *"Who has The Hobbit?"*, *"What's overdue?"*, *"Who owes fines?"*
   - *"How are fines calculated?"*, *"How do I renew a loan?"*
 
+  Full list of supported questions with real answers: [docs/ASSISTANT-QA.md](docs/ASSISTANT-QA.md) (44 question types).
+
   It is **read-only**. Answers include shortcut buttons (open member, collect fine, go to Issue), and every action still goes through the normal screens and confirmations. It runs entirely in the browser, with no external AI service and no API key. All logic is in `public/assistant.js`, and its `answer()` function could later be replaced by an LLM call.
 - **Command palette (`Ctrl K`):** search books, members and actions from anywhere. Keyboard shortcuts: `/` search, `I` issue, `R` return, `B` books, `M` members, `D` dashboard, `?` help.
 - **Notifications bell:** holds expiring today, overdue loans, copies ready for pickup, books due today, members with fines.
