@@ -40,7 +40,7 @@ function translate(err) {
   if (err.code === '23514') return new LibraryError(`Invalid value (${err.constraint || 'check failed'}).`, 400);
   if (err.code === '22P02' || err.code === '22007' || err.code === '22008') return new LibraryError('Invalid input value.', 400);
   if (err.code === '42883' || err.code === '42P01') {
-    return new LibraryError('The Supabase database is not set up yet. Run supabase/schema.sql and supabase/functions.sql in the SQL Editor.', 500);
+    return new LibraryError('The Supabase database needs an update for this feature. In Supabase → SQL Editor run supabase/upgrade-modules.sql (keeps all data). For a brand-new database run supabase/setup.sql.', 500);
   }
   return err;
 }
