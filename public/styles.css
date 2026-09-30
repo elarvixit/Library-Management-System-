@@ -1035,7 +1035,8 @@ body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events
 :root[data-theme="dark"] .btn.wa-btn:not(.sent) { color: #4ade80; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.wa-btn:not(.sent) { color: #4ade80; } }
 .card-head .wa-btn { margin-left: auto; margin-right: 10px; }
-#loans-table .who b { white-space: normal; overflow-wrap: anywhere; }
+#loans-table td:first-child .who b { white-space: normal; overflow-wrap: anywhere; }
+#loans-table td:nth-child(2) .who b { white-space: nowrap; }
 .rem-list { display: grid; gap: 16px; max-height: 60vh; overflow-y: auto; }
 .rem-group h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .rem-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }

@@ -1128,7 +1128,7 @@ function markSent(key) {
 }
 function waButton(kind, id, phone, compact = false) {
   const key = `${kind}:${id}`;
-  if (!waNumber(phone)) return `<button class="btn sm wa-btn" disabled title="No valid phone number for this member">${icon('whatsapp')}${compact ? '' : 'WhatsApp'}</button>`;
+  if (!waNumber(phone)) return `<button class="btn sm wa-btn" disabled title="No phone number saved for this member. Add it in Members → Edit." aria-label="WhatsApp: no phone number saved">${icon('whatsapp')}${compact ? '' : 'No phone'}</button>`;
   const sent = sentToday(key);
   return `<button class="btn sm wa-btn ${sent ? 'sent' : ''}" data-act="wa-${kind}" data-id="${id}" data-wa="${key}" title="${sent ? 'Reminder sent today · click to send again' : 'Send a WhatsApp reminder'}" aria-label="Send WhatsApp reminder">${icon('whatsapp')}${compact ? '' : 'WhatsApp'}</button>`;
 }
@@ -1174,10 +1174,13 @@ function openReminders() {
       <div class="sub">${esc(code)} · ${esc(title)}</div></div>${tag}${waButton(kind, id, phone)}</div>`;
   const group = (label, rows) => (rows.length ? `<div class="rem-group"><h4>${label} <span class="muted">(${rows.length})</span></h4>${rows.join('')}</div>` : '');
   const total = overdue.length + due.length + pickup.length;
+  const noPhone = [...overdue, ...due, ...pickup].filter((x) => !waNumber(x.phone)).length;
+  const phoneNote = noPhone ? `<div class="callout warn" style="margin:0 0 14px">${icon('alert')}<span><b>${plural(noPhone, 'reminder')} can't be sent</b> because
+    ${noPhone === 1 ? 'that member has' : 'those members have'} no phone number saved. Open <b>Members</b>, click ✏️ Edit and add their mobile number; the button then turns green.</span></div>` : '';
   openModal({
     title: 'Send WhatsApp reminders', sub: 'Each button opens WhatsApp with the message written for you. Press Send in WhatsApp.',
     ic: 'whatsapp', icTone: 'tone-green', ok: null, cancel: 'Close', wide: true,
-    body: total ? `<div class="rem-list">
+    body: total ? `${phoneNote}<div class="rem-list">
       ${group('Overdue', overdue.map((l) => row('loan', l.id, l.phone, l.member_name, l.member_code, l.title, badge(`${plural(l.days_overdue, 'day')} late`, 'red'))))}
       ${group(`Due in the next ${RULES.DUE_SOON_DAYS} days`, due.map((l) => row('loan', l.id, l.phone, l.member_name, l.member_code, l.title, badge(relDays(l.due_on), 'amber'))))}
       ${group('Ready to collect', pickup.map((r) => row('pickup', r.id, r.phone, r.member_name, r.member_code, r.title, badge(`until ${fmtShort(r.hold_until)}`, 'green'))))}
