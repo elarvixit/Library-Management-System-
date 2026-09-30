@@ -390,7 +390,7 @@
   root.innerHTML = `
     <section class="as-panel" id="as-panel" role="dialog" aria-label="Library Assistant" hidden>
       <header class="as-head">
-        <span class="as-logo">${icon('sparkle')}</span>
+        <span class="as-logo"><span class="bot-emoji" aria-hidden="true">🤖</span></span>
         <div class="as-title"><b>Library Assistant</b><small><span class="as-dot"></span>Help mode · reads live library data</small></div>
         <button class="icon-btn as-icon" id="as-clear" type="button" title="Clear conversation" aria-label="Clear conversation">${icon('renew')}</button>
         <button class="icon-btn as-icon" id="as-close" type="button" title="Close" aria-label="Close">${icon('x')}</button>
@@ -414,7 +414,7 @@
     const el = document.createElement('div');
     el.className = `as-msg ${who}`;
     el.innerHTML = who === 'bot'
-      ? `<span class="as-avatar">${icon('sparkle')}</span><div class="as-bubble">${html}${actions.length ? `<div class="as-actions">${actions.join('')}</div>` : ''}</div>`
+      ? `<span class="as-avatar"><span class="bot-emoji" aria-hidden="true">🤖</span></span><div class="as-bubble">${html}${actions.length ? `<div class="as-actions">${actions.join('')}</div>` : ''}</div>`
       : `<div class="as-bubble">${esc(html)}</div>`;
     log.append(el);
     log.scrollTop = log.scrollHeight;
@@ -455,8 +455,8 @@
     fab.classList.remove('on');
   }
 
-  // The sparkle icon may have been hydrated before this file registered it.
-  $('.ai-spark', fab).innerHTML = icon('sparkle');
+  // Robot symbol for the assistant (replaces any icon hydrated earlier).
+  $('.ai-spark', fab).innerHTML = '<span class="bot-emoji" aria-hidden="true">🤖</span>';
   fab.setAttribute('aria-expanded', 'false');
   fab.addEventListener('click', () => { if (panel.hidden) open(); else close(); });
   $('#as-close').addEventListener('click', close);
