@@ -31,3 +31,16 @@ test('member page: signs in with member ID + last 4 phone digits, hides contact 
     server.close();
   }
 });
+
+test('member page: a member without a phone number gets a clear message', async () => {
+  const lib = new Library(openDb(), { today: () => '2026-09-01' });
+  const m = lib.addMember({ name: 'No Phone' });
+  const server = createApp(lib).listen(0);
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/api/me`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '3.3.3.3' }, body: JSON.stringify({ code: m.member_code, phone: '1234' }) });
+    assert.equal(res.status, 404);
+    assert.match((await res.json()).error, /no phone number saved/);
+  } finally {
+    server.close();
+  }
+});

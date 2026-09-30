@@ -143,13 +143,17 @@ export function createApp(lib) {
     if (!/^[A-Z0-9-]{2,20}$/.test(code) || last4.length !== 4) {
       throw new LibraryError('Enter your member ID and the last 4 digits of your phone number.');
     }
-    const found = (await lib.listMembers({ q: code })).find((m) => String(m.member_code).toUpperCase() === code
-      && String(m.phone || '').replace(/\D/g, '').length >= 4 && String(m.phone).replace(/\D/g, '').endsWith(last4));
+    const sameId = (await lib.listMembers({ q: code })).find((m) => String(m.member_code).toUpperCase() === code);
+    const digits = String(sameId?.phone || '').replace(/\D/g, '');
+    const found = sameId && digits.length >= 4 && digits.endsWith(last4) ? sameId : null;
     if (!found) {
       const cur = t && t.until > now ? t : { count: 0, until: now + 10 * 60_000 };
       cur.count += 1;
       if (tries.size > 5000) tries.clear();
       tries.set(ip, cur);
+      if (sameId && digits.length < 4) {
+        throw new LibraryError("This member ID has no phone number saved yet, so it can't be used to sign in. Please ask the library desk to add your phone number.", 404);
+      }
       throw new LibraryError("We couldn't find a member with that ID and phone number. Please check both and try again.", 404);
     }
     tries.delete(ip);
