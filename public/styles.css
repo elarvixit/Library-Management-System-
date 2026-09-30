@@ -1015,10 +1015,10 @@ body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events
 @media (max-width: 640px) { .live-label { display: none; } .live-pill { padding: 0 10px; } }
 
 /* footer */
-.site-footer { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap;
+.site-footer { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center;
   margin-top: auto; padding: 22px 32px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px;
   background: color-mix(in srgb, var(--surface) 72%, transparent); backdrop-filter: blur(10px); }
-.footer-links { display: flex; gap: 8px 28px; flex-wrap: wrap; }
+.footer-links { display: flex; justify-content: center; gap: 8px 28px; flex-wrap: wrap; }
 .footer-links a { color: var(--muted); text-decoration: none; }
 .footer-links a:hover, .footer-links a:focus-visible { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
 .legal { font-size: 14px; line-height: 1.6; color: var(--text); }
@@ -1026,7 +1026,7 @@ body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events
 .legal p { margin: 0 0 6px; }
 .legal ul { margin: 4px 0 6px; padding-left: 20px; }
 .legal li { margin: 3px 0; }
-@media (max-width: 640px) { .site-footer { padding: 18px 16px; flex-direction: column; align-items: flex-start; } }
+@media (max-width: 640px) { .site-footer { padding: 18px 16px; gap: 8px; } }
 
 /* phone layout — kept last so it overrides the component rules above */
 @media (max-width: 640px) {
