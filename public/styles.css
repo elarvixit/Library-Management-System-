@@ -920,6 +920,39 @@ dialog::backdrop { background: rgba(16, 24, 40, .5); backdrop-filter: blur(3px);
   .p-report th { background: #eee; }
 }
 
+
+/* =====================================================================
+   Library artwork: illustrated bookshelf scene + faint shelf pattern
+   (original SVG illustrations in public/img/)
+   ===================================================================== */
+/* faint bookshelf pattern behind every page */
+body::before { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: url(img/shelf-pattern.svg) repeat; background-size: 480px 160px; opacity: .045; }
+:root[data-theme="dark"] body::before { opacity: .09; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body::before { opacity: .09; } }
+.app { position: relative; z-index: 1; }
+
+/* dashboard banner: the library scene behind a purple tint so the text stays readable */
+.hero {
+  background:
+    linear-gradient(100deg, rgba(40, 36, 120, .95) 0%, rgba(67, 56, 202, .86) 36%, rgba(79, 70, 229, .45) 64%, rgba(109, 40, 217, .18) 100%),
+    url(img/library-scene.svg) right center / cover no-repeat,
+    #4338ca;
+}
+.hero::before, .hero::after { background: rgba(255, 255, 255, .05); }
+.hero-side { background: rgba(24, 20, 70, .42); border-color: rgba(255, 255, 255, .2); backdrop-filter: blur(6px); }
+.hero-date { background: rgba(24, 20, 70, .35); }
+@media (max-width: 1100px) {
+  .hero { background:
+    linear-gradient(180deg, rgba(40, 36, 120, .95) 0%, rgba(67, 56, 202, .88) 60%, rgba(79, 70, 229, .75) 100%),
+    url(img/library-scene.svg) center / cover no-repeat, #4338ca; }
+}
+
+/* the same artwork on the sidebar brand strip, very subtle */
+.sidebar { background:
+  linear-gradient(180deg, color-mix(in srgb, var(--surface) 90%, transparent) 0%, var(--surface) 160px),
+  url(img/library-scene.svg) left top / 600px auto no-repeat, var(--surface); }
+
 /* phone layout — kept last so it overrides the component rules above */
 @media (max-width: 640px) {
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
