@@ -381,6 +381,7 @@ async function render() {
   $('#page-sub').textContent = page.sub();
   $('#crumb').textContent = page.title;
   $('#page-actions').innerHTML = pageActions(ui.view);
+  $('#content').classList.toggle('no-head', ui.view === 'dashboard');
   document.title = `${page.title} · Library Desk`;
   await renderers[ui.view]();
   hydrateIcons($('#content'));
@@ -410,6 +411,31 @@ function groupBy(rows, keyFn) {
 const renderers = {};
 
 // ===================================================================== dashboard
+// Tiny single-series trend line for KPI cards (decorative summary; the full chart has the details).
+function sparkline(values, color, label) {
+  const w = 120; const h = 36; const n = values.length;
+  if (n < 2) return '';
+  const max = Math.max(1, ...values);
+  const pts = values.map((v, i) => [(i / (n - 1)) * w, h - 3 - (v / max) * (h - 8)]);
+  const line = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const [lx, ly] = pts.at(-1);
+  const gid = `sg${Math.random().toString(36).slice(2, 8)}`;
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">
+    <defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".22"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+    <polygon points="0,${h} ${line} ${w},${h}" fill="url(#${gid})"/>
+    <polyline points="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+    <circle cx="${lx}" cy="${ly}" r="3" fill="${color}" stroke="var(--surface)" stroke-width="2"/></svg>`;
+}
+// Single-value progress ring (share of copies on loan).
+function ring(pct, label) {
+  const r = 52; const c = 2 * Math.PI * r; const p = Math.max(0, Math.min(100, pct));
+  return `<svg class="ring" viewBox="0 0 128 128" role="img" aria-label="${esc(label)}">
+    <circle cx="64" cy="64" r="${r}" class="ring-track"/>
+    <circle cx="64" cy="64" r="${r}" class="ring-val" stroke-dasharray="${(c * p) / 100} ${c}" transform="rotate(-90 64 64)"/>
+    <text x="64" y="62" text-anchor="middle" class="ring-num">${p}%</text><text x="64" y="82" text-anchor="middle" class="ring-lbl">in use</text></svg>`;
+}
+
+ui.statsDays = 14;
 renderers.dashboard = async () => {
   const d = state.dash;
   if (!d) { $('#view-dashboard').innerHTML = `<div class="card">${skeleton(400)}</div>`; return; }
@@ -418,83 +444,144 @@ renderers.dashboard = async () => {
     onTimeRate: null, fines: { collected_this_month: 0 }, missing: true,
   };
   const s = d.stats;
-  const todayAct = st.activity.at(-1) || { issued: 0, returned: 0 };
-  const owing = state.members.filter((m) => m.unpaid_fines > 0).length;
-  const kpi = (label, val, ic, tone, foot, target, alert = false) => `
-    <button class="kpi ${alert ? 'alert' : ''}" data-act="kpi" data-target="${target}">
-      <div class="kpi-top"><span class="kpi-label">${esc(label)}</span><span class="kpi-ico ${tone}">${icon(ic)}</span></div>
-      <div class="kpi-val">${esc(val)}</div><div class="kpi-foot">${foot}</div></button>`;
+  const act = st.activity;
+  const issuedSeries = act.map((x) => x.issued);
+  const returnedSeries = act.map((x) => x.returned);
+  const sum = (a) => a.reduce((t, v) => t + v, 0);
+  const todayAct = act.at(-1) || { issued: 0, returned: 0 };
+  const owing = state.members.filter((m) => m.unpaid_fines > 0);
+  const borrowing = state.members.filter((m) => m.active_issues > 0).length;
+  const h = new Date().getHours();
+  const hello = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
 
-  const attnRows = {
-    overdue: d.overdue,
-    due: st.dueSoon,
-    pickup: d.readyForPickup,
-  };
+  // one-line summary of what needs doing today
+  const todo = [];
+  if (s.overdue) todo.push(`<b>${plural(s.overdue, 'overdue loan')}</b>`);
+  if (s.ready_for_pickup) todo.push(`<b>${plural(s.ready_for_pickup, 'copy', 'copies')}</b> ready for pickup`);
+  const dueToday = st.dueSoon.filter((l) => l.due_on === TODAY).length;
+  if (dueToday) todo.push(`<b>${plural(dueToday, 'book')}</b> due back today`);
+  if (s.unpaid_fines) todo.push(`<b>${rupees(s.unpaid_fines)}</b> in unpaid fines`);
+  const summary = todo.length ? `Today you have ${todo.join(', ').replace(/, ([^,]*)$/, ' and $1')}.` : 'Everything is on track — nothing needs your attention right now.';
+
+  const kpi = ({ label, value, ic, tone, foot, target, series, color, alert }) => `
+    <button class="kpi2 ${alert ? 'alert' : ''}" data-act="kpi" data-target="${target}" ${series ? `title="${esc(label)} — last ${act.length} days: ${series.join(', ')}"` : ''}>
+      <div class="kpi2-top"><span class="kpi-ico ${tone}">${icon(ic)}</span><span class="kpi2-label">${esc(label)}</span>${icon('chevRight', 'kpi2-go')}</div>
+      <div class="kpi2-mid"><span class="kpi2-val">${value}</span>${series ? sparkline(series, color, `${label}, last ${act.length} days`) : ''}</div>
+      <div class="kpi2-foot">${foot}</div></button>`;
+
+  const todayEvents = st.recent.filter((e) => e.date === TODAY);
+  const attnCounts = { overdue: d.overdue.length, due: st.dueSoon.length, pickup: d.readyForPickup.length };
+  const attnRows = { overdue: d.overdue, due: st.dueSoon, pickup: d.readyForPickup };
+  const maxTop = Math.max(1, ...st.topBooks.map((b) => b.loans));
+
   $('#view-dashboard').innerHTML = `
     ${st.missing ? `<div class="callout warn row-gap">${icon('alert')}<span><b>The server is running an older version.</b> Charts and analytics need a restart:
       in the server window press <kbd>Ctrl</kbd> + <kbd>C</kbd>, run <b>npm.cmd start</b>, then refresh this page.</span></div>` : ''}
-    <div class="kpis">
-      ${kpi('Books on loan', s.on_loan, 'book', 'tone-indigo', `${st.utilisation}% of ${plural(s.copies, 'copy', 'copies')} in use`, 'loans')}
-      ${kpi('Issued today', s.issued_today, 'arrowOut', 'tone-blue', `${plural(todayAct.returned, 'return')} today`, 'loans')}
-      ${kpi('Overdue', s.overdue, 'alert', s.overdue ? 'tone-red' : 'tone-green', s.overdue ? `<span class="t-red">${rupees(s.overdue_fines_accruing)}</span> in fines accruing` : 'Everything is on time', 'overdue', s.overdue > 0)}
-      ${kpi('Ready for pickup', s.ready_for_pickup, 'inbox', 'tone-green', `${plural(s.pending_reservations, 'member')} waiting in queues`, 'reservations')}
-      ${kpi('Unpaid fines', rupees(s.unpaid_fines), 'wallet', s.unpaid_fines ? 'tone-amber' : 'tone-green', s.unpaid_fines ? `${plural(owing, 'member')} blocked from borrowing` : 'All fines settled', 'fines')}
-    </div>
 
-    <div class="g-main row-gap">
-      <div class="card">
-        <div class="card-head"><div><h2>Circulation activity</h2><p>Books issued and returned per day, last ${st.activity.length} days</p></div>
-          <div class="right chart-legend"><span><i style="background:var(--series-1)"></i>Issued</span><span><i style="background:var(--series-2)"></i>Returned</span></div></div>
-        <div class="chart-box" id="activity-chart"></div>
-      </div>
-      <div class="card">
-        <div class="card-head"><div><h2>Collection health</h2><p>How the collection is being used</p></div></div>
-        <div class="card-body">
-          <div class="muted small">Copies in use</div>
-          <div class="hero-num"><b>${st.utilisation}%</b><span class="muted small">${s.on_loan} of ${s.copies} copies on loan</span></div>
-          <div class="meter" role="img" aria-label="${st.utilisation}% of copies on loan"><i style="width:${Math.min(100, st.utilisation)}%"></i></div>
-          <div class="mini-stats" style="margin-top:18px">
-            <div class="mini"><div class="l">On-time returns</div><div class="v">${st.onTimeRate == null ? '—' : `${st.onTimeRate}%`}</div><div class="h">last ${st.activity.length} days</div></div>
-            <div class="mini"><div class="l">Fines collected</div><div class="v">${rupees(st.fines.collected_this_month)}</div><div class="h">this month</div></div>
-            <div class="mini"><div class="l">Titles</div><div class="v">${s.titles}</div><div class="h">${s.available} copies on shelf</div></div>
-            <div class="mini"><div class="l">Active members</div><div class="v">${s.active_members}</div><div class="h">${plural(state.members.filter((m) => m.active_issues > 0).length, 'borrowing', 'borrowing')} now</div></div>
-          </div>
+    <section class="hero">
+      <div class="hero-main">
+        <span class="hero-date">${icon('calendar')}${fmtLong(TODAY)}</span>
+        <h2>${hello}, ${esc(LIBRARIAN.split(' ')[0])}</h2>
+        <p>${summary}</p>
+        <div class="hero-actions">
+          <button class="hbtn primary" data-act="go-issue">${icon('arrowOut')}Issue a book</button>
+          <button class="hbtn" data-act="go-return">${icon('arrowIn')}Return a book</button>
+          <button class="hbtn" data-act="go-reserve">${icon('bookmark')}Reserve</button>
+          <button class="hbtn" data-act="add-member">${icon('userPlus')}New member</button>
         </div>
       </div>
+      <div class="hero-side">
+        ${ring(st.utilisation, `${st.utilisation}% of copies are on loan`)}
+        <div class="hero-facts">
+          <div><b>${s.on_loan}</b><span>on loan</span></div>
+          <div><b>${s.available}</b><span>on the shelf</span></div>
+          <div><b>${borrowing}</b><span>members borrowing</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="kpi2-grid">
+      ${kpi({ label: 'Issued today', value: s.issued_today, ic: 'arrowOut', tone: 'tone-blue', target: 'loans', series: issuedSeries, color: 'var(--series-1)', foot: `${sum(issuedSeries)} in the last ${act.length} days` })}
+      ${kpi({ label: 'Returned today', value: todayAct.returned, ic: 'arrowIn', tone: 'tone-green', target: 'loans', series: returnedSeries, color: 'var(--green-solid)', foot: `${sum(returnedSeries)} in the last ${act.length} days` })}
+      ${kpi({ label: 'Overdue', value: s.overdue, ic: 'alert', tone: s.overdue ? 'tone-red' : 'tone-green', target: 'overdue', alert: s.overdue > 0, foot: s.overdue ? `<span class="t-red">${rupees(s.overdue_fines_accruing)}</span> in fines building up` : 'Every loan is on time' })}
+      ${kpi({ label: 'Unpaid fines', value: rupees(s.unpaid_fines), ic: 'wallet', tone: s.unpaid_fines ? 'tone-amber' : 'tone-green', target: 'fines', foot: s.unpaid_fines ? `${plural(owing.length, 'member')} can't borrow until paid` : 'All fines settled' })}
     </div>
 
-    <div class="g-main row-gap">
-      <div class="card">
+    <div class="bento">
+      <div class="card b-8">
+        <div class="card-head"><div><h2>Circulation</h2><p>Books issued and returned per day</p></div>
+          <div class="right"><div class="chart-legend"><span><i style="background:var(--series-1)"></i>Issued</span><span><i style="background:var(--series-2)"></i>Returned</span></div>
+          <div class="segmented seg-sm" id="range-seg">${[7, 14, 30].map((n) => `<button data-days="${n}" class="${ui.statsDays === n ? 'on' : ''}">${n}d</button>`).join('')}</div></div></div>
+        <div class="chart-box" id="activity-chart"></div>
+      </div>
+      <div class="card b-4 health">
+        <div class="card-head"><div><h2>Library health</h2><p>How well things are running</p></div></div>
+        <div class="card-body health-list">
+          ${healthRow('On-time returns', st.onTimeRate == null ? '—' : `${st.onTimeRate}%`, st.onTimeRate ?? 0, st.onTimeRate == null ? 'No returns yet' : `of returns in the last ${act.length} days`, st.onTimeRate != null && st.onTimeRate < 60 ? 'amber' : 'green')}
+          ${healthRow('Copies in use', `${st.utilisation}%`, st.utilisation, `${s.on_loan} of ${s.copies} copies on loan`, 'indigo')}
+          ${healthRow('Members borrowing', `${s.active_members ? Math.round((borrowing / s.active_members) * 100) : 0}%`, s.active_members ? (borrowing / s.active_members) * 100 : 0, `${borrowing} of ${s.active_members} active members`, 'blue')}
+          <div class="health-foot"><div><span>Fines collected</span><b>${rupees(st.fines.collected_this_month)}</b><small>this month</small></div>
+            <div><span>Waiting in queues</span><b>${s.pending_reservations}</b><small>members</small></div></div>
+        </div>
+      </div>
+
+      <div class="card b-8">
         <div class="card-head b"><div><h2>Needs attention</h2><p>Follow up on these today</p></div>
           <div class="right tabs mini-tabs" id="attn-tabs">
-            <button data-attn="overdue" class="${ui.attn === 'overdue' ? 'on' : ''}">Overdue <span class="tab-count">${d.overdue.length}</span></button>
-            <button data-attn="due" class="${ui.attn === 'due' ? 'on' : ''}">Due soon <span class="tab-count">${st.dueSoon.length}</span></button>
-            <button data-attn="pickup" class="${ui.attn === 'pickup' ? 'on' : ''}">Pickup <span class="tab-count">${d.readyForPickup.length}</span></button>
+            <button data-attn="overdue" class="${ui.attn === 'overdue' ? 'on' : ''}"><i class="dotc red"></i>Overdue <span class="tab-count">${attnCounts.overdue}</span></button>
+            <button data-attn="due" class="${ui.attn === 'due' ? 'on' : ''}"><i class="dotc amber"></i>Due soon <span class="tab-count">${attnCounts.due}</span></button>
+            <button data-attn="pickup" class="${ui.attn === 'pickup' ? 'on' : ''}"><i class="dotc green"></i>Pickup <span class="tab-count">${attnCounts.pickup}</span></button>
           </div></div>
         <div id="attn-body">${renderAttention(ui.attn, attnRows[ui.attn])}</div>
       </div>
-      <div class="card">
-        <div class="card-head b"><div><h2>Recent activity</h2></div><div class="right"><a class="btn sm ghost" href="#/activity">View all${icon('chevRight')}</a></div></div>
-        ${st.recent.length ? `<ul class="feed">${st.recent.slice(0, 7).map(feedItem).join('')}</ul>` : empty('activity', 'No activity yet', '', 'sm')}
+      <div class="card b-4">
+        <div class="card-head b"><div><h2>Today at the desk</h2><p>${plural(todayEvents.length, 'event')} so far</p></div><div class="right"><a class="btn sm ghost" href="#/activity">All activity${icon('chevRight')}</a></div></div>
+        ${todayEvents.length ? `<ul class="feed compact">${todayEvents.slice(0, 6).map(feedItem).join('')}</ul>`
+          : `${empty('activity', 'Quiet so far', 'Issues, returns and reservations made today will appear here.', 'sm')}${st.recent.length ? `<div class="card-foot"><span class="muted small">Last activity ${relDays(st.recent[0].date)}</span></div>` : ''}`}
       </div>
-    </div>
 
-    <div class="g-2">
-      <div class="card">
-        <div class="card-head"><div><h2>Waiting for a copy</h2><p>Reservation queues, first come first served</p></div><div class="right"><a class="btn sm ghost" href="#/reservations">Manage${icon('chevRight')}</a></div></div>
-        ${pendingList(d.pendingReservations)}
+      <div class="card b-4">
+        <div class="card-head"><div><h2>Most borrowed</h2><p>All-time favourites</p></div></div>
+        ${st.topBooks.length ? `<div class="rows top-books">${st.topBooks.map((b, i) => `<div class="rowi clickable" data-row="book" data-id="${b.id}">
+          <span class="rank ${i === 0 ? 'r1' : ''}">${i + 1}</span>${cover(b.title, 'sm')}
+          <div class="grow"><b>${esc(b.title)}</b><div class="tb-bar"><i style="width:${(b.loans / maxTop) * 100}%"></i></div></div>
+          <span class="muted small nowrap">${plural(b.loans, 'loan')}</span></div>`).join('')}</div>` : empty('book', 'No loans yet', '', 'sm')}
       </div>
-      <div class="card">
-        <div class="card-head"><div><h2>Popular categories</h2><p>Total loans by category</p></div></div>
+      <div class="card b-4">
+        <div class="card-head"><div><h2>Popular categories</h2><p>Loans by category</p></div></div>
         <div class="card-body">${categoryBars(st.categories)}</div>
-        ${st.topBooks.length ? `<div class="card-head" style="padding-top:4px"><div><h2>Most borrowed</h2></div></div>
-        <div class="rows" style="padding:6px 0 8px">${st.topBooks.map((b, i) => `<div class="rowi clickable" data-row="book" data-id="${b.id}"><span class="rank ${i === 0 ? 'r1' : ''}">${i + 1}</span>${cover(b.title, 'sm')}
-          <div class="grow"><b>${esc(b.title)}</b><span class="sub">${esc(b.author)}</span></div><span class="muted small nowrap">${plural(b.loans, 'loan')}</span></div>`).join('')}</div>` : ''}
+      </div>
+      <div class="card b-4">
+        <div class="card-head"><div><h2>Reservation queues</h2><p>First come, first served</p></div><div class="right"><a class="btn sm ghost" href="#/reservations">Manage${icon('chevRight')}</a></div></div>
+        ${pendingList(d.pendingReservations)}
       </div>
     </div>`;
   if (st.missing) $('#activity-chart').innerHTML = empty('activity', 'Chart unavailable', 'Restart the server to load analytics.', 'sm');
-  else drawActivityChart($('#activity-chart'), st.activity);
+  else drawChartForRange();
 };
+function healthRow(label, value, pct, sub, tone) {
+  return `<div class="health-row"><div class="hr-top"><span>${esc(label)}</span><b>${value}</b></div>
+    <div class="meter ${tone}" role="img" aria-label="${esc(label)}: ${esc(value)}"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>
+    <small>${esc(sub)}</small></div>`;
+}
+// The chart can show 7 / 14 / 30 days; 14 days comes with the dashboard data, other ranges are fetched.
+async function drawChartForRange() {
+  const box = $('#activity-chart');
+  if (!box) return;
+  let data = state.stats?.activity || [];
+  if (ui.statsDays !== data.length) {
+    try { data = (await api('GET', `/api/stats?days=${ui.statsDays}`)).activity; } catch (err) { fail(err); }
+  }
+  state.chartData = data;
+  drawActivityChart(box, data);
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('#range-seg button[data-days]');
+  if (!b) return;
+  ui.statsDays = Number(b.dataset.days);
+  $$('#range-seg button').forEach((x) => x.classList.toggle('on', x === b));
+  drawChartForRange();
+});
 
 function renderAttention(kind, rows) {
   if (kind === 'overdue') {
@@ -613,21 +700,104 @@ function drawActivityChart(box, data) {
 }
 
 // ===================================================================== activity page
+const ACT_GROUPS = {
+  all: { label: 'All', types: null },
+  loans: { label: 'Loans', types: ['issued'] },
+  returns: { label: 'Returns', types: ['returned'] },
+  reservations: { label: 'Reservations', types: ['reserved', 'ready', 'expired', 'cancelled'] },
+  fines: { label: 'Fines', types: ['fine_paid'] },
+};
+// kept as a list so the buttons stay in this order (objects put numeric keys first)
+const ACT_RANGE_LIST = [['today', 'Today'], ['7', '7 days'], ['30', '30 days'], ['all', 'All time']];
+const ACT_RANGES = Object.fromEntries(ACT_RANGE_LIST);
+ui.actRange = '30';
+ui.actLimit = 40;
+
 renderers.activity = async () => {
   const el = $('#view-activity');
-  if (!el.innerHTML) el.innerHTML = `<div class="card">${skeleton(300)}</div>`;
-  const events = await api('GET', '/api/activity?limit=200');
-  const groups = { all: null, loans: ['issued'], returns: ['returned'], reservations: ['reserved', 'ready', 'expired', 'cancelled'], fines: ['fine_paid'] };
-  const shown = groups[ui.actFilter] ? events.filter((e) => groups[ui.actFilter].includes(e.type)) : events;
-  const days = groupBy(shown, (e) => e.date);
-  el.innerHTML = `<div class="card">
-    <div class="card-toolbar"><div class="segmented" id="act-filter">
-      ${Object.keys(groups).map((k) => `<button data-v="${k}" class="${ui.actFilter === k ? 'on' : ''}">${cap(k)}</button>`).join('')}</div>
-      <span class="spacer"></span><span class="result-count">${plural(shown.length, 'event')}</span></div>
-    ${days.length ? `<ul class="feed">${days.map(([date, evs]) => `<li class="feed-day" style="display:block;padding-left:0">${date === TODAY ? 'Today' : date === addDays(TODAY, -1) ? 'Yesterday' : fmtLong(date)}</li>${evs.map(feedItem).join('')}`).join('')}</ul>`
-      : empty('activity', 'No activity to show')}
-  </div>`;
+  if (!el.dataset.ready) {
+    el.dataset.ready = '1';
+    el.innerHTML = `
+      <div class="act-stats" id="act-stats"></div>
+      <div class="card act-card">
+        <div class="card-toolbar act-toolbar">
+          <div class="search"><span data-icon="search"></span><input id="act-q" type="search" placeholder="Search by member or book…" data-slash></div>
+          <div class="segmented" id="act-range">${ACT_RANGE_LIST.map(([k, l]) => `<button data-range="${k}">${l}</button>`).join('')}</div>
+        </div>
+        <div class="act-chips" id="act-chips"></div>
+        <div id="act-timeline">${skeleton(320)}</div>
+      </div>`;
+    hydrateIcons(el);
+    $('#act-q').addEventListener('input', () => { ui.actLimit = 40; drawActivity(); });
+  }
+  state.activityEvents = await api('GET', '/api/activity?limit=200');
+  drawActivity();
 };
+
+function drawActivity() {
+  const all = state.activityEvents || [];
+  const q = ($('#act-q')?.value || '').trim().toLowerCase();
+  const from = ui.actRange === 'all' ? '' : ui.actRange === 'today' ? TODAY : addDays(TODAY, -(Number(ui.actRange) - 1));
+  const inRange = all.filter((e) => !from || e.date >= from);
+  const matchQ = inRange.filter((e) => !q || `${e.member_name} ${e.title}`.toLowerCase().includes(q));
+  const types = ACT_GROUPS[ui.actFilter]?.types;
+  const shown = types ? matchQ.filter((e) => types.includes(e.type)) : matchQ;
+
+  const count = (t) => inRange.filter((e) => t.includes(e.type)).length;
+  const finesIn = inRange.filter((e) => e.type === 'fine_paid').reduce((t, e) => t + (e.amount || 0), 0);
+  const lateReturns = inRange.filter((e) => e.type === 'returned' && e.amount > 0).length;
+  const stat = (ic, tone, val, label, sub) => `<div class="act-stat"><span class="kpi-ico ${tone}">${icon(ic)}</span><div><b>${val}</b><span>${label}</span><small>${sub}</small></div></div>`;
+  $('#act-stats').innerHTML = [
+    stat('arrowOut', 'tone-blue', count(['issued']), 'books issued', ACT_RANGES[ui.actRange].toLowerCase()),
+    stat('arrowIn', 'tone-green', count(['returned']), 'returns', `${plural(lateReturns, 'late return')}`),
+    stat('bookmark', 'tone-amber', count(['reserved']), 'reservations', `${count(['ready'])} made ready for pickup`),
+    stat('wallet', 'tone-violet', rupees(finesIn), 'fines collected', `${plural(count(['fine_paid']), 'payment')}`),
+  ].join('');
+
+  for (const b of $$('#act-range button')) b.classList.toggle('on', b.dataset.range === ui.actRange);
+  $('#act-chips').innerHTML = Object.entries(ACT_GROUPS).map(([k, g]) => {
+    const n = g.types ? matchQ.filter((e) => g.types.includes(e.type)).length : matchQ.length;
+    return `<button class="chip ${ui.actFilter === k ? 'on' : ''}" data-actf="${k}">${g.label}<span class="chip-n">${n}</span></button>`;
+  }).join('');
+
+  if (!shown.length) {
+    $('#act-timeline').innerHTML = empty('activity', q ? `Nothing matches “${q}”` : 'No activity in this period', q ? 'Try a different name or title.' : 'Try a longer time range.');
+    return;
+  }
+  const visible = shown.slice(0, ui.actLimit);
+  const days = groupBy(visible, (e) => e.date);
+  const dayLabel = (date) => (date === TODAY ? 'Today' : date === addDays(TODAY, -1) ? 'Yesterday' : asDate(date).toLocaleDateString('en-IN', { weekday: 'long' }));
+  const bookByTitle = new Map(state.books.map((b) => [b.title, b]));
+  const memberByName = new Map(state.members.map((m) => [m.name, m]));
+  $('#act-timeline').innerHTML = `<div class="tl">${days.map(([date, evs]) => {
+    const dayAll = shown.filter((e) => e.date === date);
+    const tally = Object.entries({ issued: 'issued', returned: 'returned', reserved: 'reserved', fine_paid: 'fines paid' })
+      .map(([t, l]) => [dayAll.filter((e) => e.type === t).length, l]).filter(([n]) => n).map(([n, l]) => `${n} ${l}`).join(' · ');
+    return `<section class="tl-day">
+      <header class="tl-head"><div><b>${dayLabel(date)}</b><span>${fmtDate(date)}</span></div><small>${tally}</small></header>
+      <ol class="tl-list">${evs.map((e) => {
+        const [ic, tone, text] = FEED[e.type] || FEED.issued;
+        const b = bookByTitle.get(e.title);
+        const m = memberByName.get(e.member_name);
+        return `<li class="tl-item t-${e.type}"><span class="tl-dot ${tone || 'tone-indigo'}">${icon(ic)}</span>
+          <div class="tl-card">${cover(e.title, 'sm')}
+            <div class="grow"><div class="tl-text">${text(e)}</div>
+              <div class="tl-meta">${avatar(e.member_name, 'xs')}<span>${m ? esc(m.member_code) : 'Member'}</span>${b ? `<span>· ${esc(b.author)}</span><span class="tl-cat">${esc(b.category)}</span>` : ''}${e.amount && e.type !== 'fine_paid' ? `<span class="tl-fine">${rupees(e.amount)} fine</span>` : ''}</div></div>
+            <div class="tl-actions">${m ? `<button class="btn xs ghost" data-act="view-member" data-id="${m.id}" title="Open member">${icon('user')}</button>` : ''}
+              ${b ? `<button class="btn xs ghost" data-act="view-book" data-id="${b.id}" title="Open book">${icon('book')}</button>` : ''}</div>
+          </div></li>`;
+      }).join('')}</ol></section>`;
+  }).join('')}</div>
+  <div class="card-foot tl-foot"><span class="muted small">Showing ${visible.length} of ${plural(shown.length, 'event')}</span>
+    ${shown.length > visible.length ? `<button class="btn sm" id="act-more">Show more${icon('chevRight')}</button>` : ''}</div>`;
+  $('#act-more')?.addEventListener('click', () => { ui.actLimit += 40; drawActivity(); });
+}
+document.addEventListener('click', (e) => {
+  const r = e.target.closest('#act-range button[data-range]');
+  if (r) { ui.actRange = r.dataset.range; ui.actLimit = 40; drawActivity(); return; }
+  const c = e.target.closest('#act-chips [data-actf]');
+  if (c) { ui.actFilter = c.dataset.actf; ui.actLimit = 40; drawActivity(); }
+});
 
 // ===================================================================== circulation: issue
 function updateIssuePanel() {
@@ -1347,7 +1517,7 @@ function toggleTheme() {
   const next = isDark() ? 'light' : 'dark';
   try { localStorage.setItem('lib-theme', next); } catch { /* ignore */ }
   applyTheme(next);
-  if (ui.view === 'dashboard' && state.stats) drawActivityChart($('#activity-chart'), state.stats.activity);
+  if (ui.view === 'dashboard' && state.stats) drawActivityChart($('#activity-chart'), state.chartData || state.stats.activity);
 }
 
 // ===================================================================== event wiring
@@ -1491,7 +1661,7 @@ document.addEventListener('keydown', (e) => {
 let resizeT;
 window.addEventListener('resize', () => {
   clearTimeout(resizeT);
-  resizeT = setTimeout(() => { if (ui.view === 'dashboard' && state.stats) drawActivityChart($('#activity-chart'), state.stats.activity); }, 150);
+  resizeT = setTimeout(() => { if (ui.view === 'dashboard' && state.stats) drawActivityChart($('#activity-chart'), state.chartData || state.stats.activity); }, 150);
 });
 
 // ===================================================================== pickers
