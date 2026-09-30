@@ -87,10 +87,17 @@ const hydrateIcons = (root = document) => { for (const el of $$('[data-icon]', r
 function hue(s) { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
 const initials = (s) => String(s || '?').trim().split(/\s+/).filter((w) => /\w/.test(w)).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
 const avatar = (name, size = '') => `<span class="avatar ${size}" style="background:hsl(${hue(name)} 48% 48%)">${esc(initials(name))}</span>`;
-function cover(title, size = '') {
+// Book cover: the real front cover from Open Library (looked up by ISBN), drawn over a designed
+// fallback cover. If Open Library has no image, the fallback simply stays visible.
+const coverUrl = (isbn, size) => `https://covers.openlibrary.org/b/isbn/${isbn}-${size}.jpg?default=false`;
+function cover(title, size = '', isbn = '') {
   const h = hue(title);
   const letter = initials(String(title).replace(/^(the|a|an)\s+/i, '')).slice(0, 1);
-  return `<span class="cover ${size}" style="background:linear-gradient(155deg,hsl(${h} 52% 46%),hsl(${(h + 35) % 360} 58% 30%))">${esc(letter)}</span>`;
+  const code = String(isbn || state.books.find((b) => b.title === title)?.isbn || '').replace(/[^0-9X]/gi, '');
+  const big = size === 'lg' || size === 'xl';
+  const face = big ? `<span class="cv-title">${esc(title)}</span><span class="cv-rule"></span>` : `<span class="cv-letter">${esc(letter)}</span>`;
+  const img = code ? `<img src="${coverUrl(code, size === 'xl' || size === 'lg' ? 'L' : 'M')}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="if(this.naturalWidth>10)this.parentNode.classList.add('has-img');else this.remove()" onerror="this.remove()">` : '';
+  return `<span class="cover ${size}" style="background:linear-gradient(155deg,hsl(${h} 52% 46%),hsl(${(h + 35) % 360} 58% 30%))">${face}${img}</span>`;
 }
 const who = (name, sub, q = '') => `<div class="who">${avatar(name)}<div><b>${hl(name, q)}</b><div class="sub">${sub}</div></div></div>`;
 const bookWho = (title, sub, q = '') => `<div class="who">${cover(title)}<div><b>${hl(title, q)}</b><div class="sub">${sub}</div></div></div>`;
