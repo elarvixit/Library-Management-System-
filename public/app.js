@@ -1718,6 +1718,54 @@ applyTheme(savedTheme);
 hydrateIcons();
 window.addEventListener('hashchange', route);
 
+// ===================================================================== footer & legal pages
+const LEGAL = {
+  privacy: { title: 'Privacy Policy', ic: 'idCard', body: `
+    <p>Library Desk is operated by Elarvix Technologies to run the day-to-day work of the library.</p>
+    <h4>What we store</h4>
+    <ul><li><b>Members:</b> name, member ID, phone, email, membership type and validity.</li>
+      <li><b>Library records:</b> books, loans, returns, reservations, fines and payments.</li>
+      <li><b>Live visitor count:</b> a random ID for each open browser tab and the page it is on. It holds no name or personal details and is deleted after 5 minutes.</li></ul>
+    <h4>How it is used</h4>
+    <p>Only to lend books, track due dates and fines, manage reservations and produce library reports. We do not sell data or use it for advertising.</p>
+    <h4>Where it is kept</h4>
+    <p>In the library's database, hosted on Supabase, with the website served by Vercel. Access is limited to library staff.</p>
+    <h4>Your choices</h4>
+    <p>Members can ask the library desk to see, correct or remove their details. Records needed for unreturned books or unpaid fines are kept until they are settled.</p>` },
+  terms: { title: 'Terms of Use', ic: 'file', body: `
+    <p>By using Library Desk you agree to these terms.</p>
+    <h4>Library rules</h4>
+    <ul><li>Books are lent for ${'{LOAN}'} days, with at most ${'{MAX}'} books per member at a time.</li>
+      <li>Late returns are charged ${'{FINE}'} per day. Members with unpaid fines cannot borrow until they pay.</li>
+      <li>Reserved books are held for ${'{HOLD}'} days once they are ready for pickup.</li></ul>
+    <h4>Using the system</h4>
+    <p>Use the system only for library work, keep member details accurate, and do not try to access data you are not meant to see.</p>
+    <h4>Availability</h4>
+    <p>We aim to keep the service running but cannot promise it will always be available or error free.</p>
+    <h4>Changes</h4>
+    <p>Elarvix Technologies may update these terms; the latest version is always shown here.</p>` },
+  cookies: { title: 'Cookie Policy', ic: 'info', body: `
+    <p><b>Library Desk does not use cookies</b>, and there is no advertising or third-party tracking.</p>
+    <h4>What your browser keeps</h4>
+    <ul><li><b>Theme</b> (light or dark) and <b>book view</b> (table or grid), saved in your browser's local storage so they are remembered next time.</li>
+      <li><b>Tab ID</b> for the live visitor count, saved in session storage and removed when you close the tab.</li></ul>
+    <h4>Book covers</h4>
+    <p>Cover pictures are loaded from Open Library (openlibrary.org), which may keep standard server logs of those requests.</p>
+    <h4>Clearing it</h4>
+    <p>You can clear this at any time from your browser's site data settings; the site still works without it.</p>` },
+};
+function openLegal(key) {
+  const doc = LEGAL[key];
+  if (!doc) return;
+  const r = RULES || {};
+  const body = doc.body.replace('{LOAN}', r.LOAN_DAYS ?? 14).replace('{MAX}', r.MAX_ACTIVE_ISSUES ?? 3)
+    .replace('{FINE}', `₹${r.FINE_PER_DAY ?? 5}`).replace('{HOLD}', r.HOLD_DAYS ?? 2);
+  openModal({ title: doc.title, sub: 'Elarvix Technologies · Library Desk', ic: doc.ic, body: `<div class="legal">${body}</div>`,
+    ok: 'Got it', hideCancel: true, wide: true, onSubmit: () => {} });
+}
+$('#footer-year').textContent = new Date().getFullYear();
+for (const a of $$('[data-legal]')) a.addEventListener('click', (e) => { e.preventDefault(); openLegal(a.dataset.legal); });
+
 // ===================================================================== live visitors
 // Every open tab checks in every 20 s; the server counts tabs seen in the last minute.
 const live = { sid: '', data: null };
