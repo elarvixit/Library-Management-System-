@@ -381,6 +381,7 @@ function route() {
   ui.view = PAGES[view] ? view : 'dashboard';
   for (const a of $$('.nav-item')) a.classList.toggle('on', a.dataset.view === ui.view);
   for (const v of $$('.view')) v.classList.toggle('on', v.id === `view-${ui.view}`);
+  $('.site-footer').hidden = ui.view !== 'dashboard'; // footer only on the dashboard
   $('#sidebar').classList.remove('open');
   $('#scrim').classList.remove('open');
   window.scrollTo({ top: 0 });
