@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
-import { Library, LibraryError } from './library.js';
+import { Library, LibraryError, RULES } from './library.js';
 import { parseBooksCsv, toCsv } from './csv.js';
 import { seedDemo } from './demo-seed.js';
 import { buildReport, REPORTS } from './reports.js';
@@ -128,6 +128,46 @@ export function createApp(lib) {
 
   // Live visitors (heartbeat from every open tab)
   app.post('/api/presence', h((req) => lib.presence(req.body ?? {})));
+
+  // Member self-service (read-only). A member signs in with their member ID plus the last 4 digits
+  // of their phone number; the reply holds no contact details. Wrong guesses from one address are limited.
+  const tries = new Map();
+  app.get('/member', (req, res) => res.sendFile(path.join(here, '..', 'public', 'member.html')));
+  app.post('/api/me', h(async (req) => {
+    const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+    const now = Date.now();
+    const t = tries.get(ip);
+    if (t && t.until > now && t.count >= 8) throw new LibraryError('Too many attempts. Please wait 10 minutes and try again.', 429);
+    const code = String(req.body?.code ?? '').trim().toUpperCase();
+    const last4 = String(req.body?.phone ?? '').replace(/\D/g, '').slice(-4);
+    if (!/^[A-Z0-9-]{2,20}$/.test(code) || last4.length !== 4) {
+      throw new LibraryError('Enter your member ID and the last 4 digits of your phone number.');
+    }
+    const found = (await lib.listMembers({ q: code })).find((m) => String(m.member_code).toUpperCase() === code
+      && String(m.phone || '').replace(/\D/g, '').length >= 4 && String(m.phone).replace(/\D/g, '').endsWith(last4));
+    if (!found) {
+      const cur = t && t.until > now ? t : { count: 0, until: now + 10 * 60_000 };
+      cur.count += 1;
+      if (tries.size > 5000) tries.clear();
+      tries.set(ip, cur);
+      throw new LibraryError("We couldn't find a member with that ID and phone number. Please check both and try again.", 404);
+    }
+    tries.delete(ip);
+    const d = await lib.memberDetails(found.id);
+    const m = d.member;
+    return {
+      today: await lib.today(),
+      rules: { LOAN_DAYS: RULES.LOAN_DAYS, MAX_ACTIVE_ISSUES: RULES.MAX_ACTIVE_ISSUES, FINE_PER_DAY: RULES.FINE_PER_DAY, HOLD_DAYS: RULES.HOLD_DAYS, MAX_RENEWALS: RULES.MAX_RENEWALS },
+      member: { name: m.name, member_code: m.member_code, membership_type: m.membership_type || 'General', valid_until: m.valid_until || null,
+        join_date: m.join_date, active: !!m.active, unpaid_fines: Number(m.unpaid_fines) || 0 },
+      loans: d.activeIssues.map((i) => ({ title: i.title, author: i.author, isbn: i.isbn, issued_on: i.issued_on, due_on: i.due_on,
+        overdue: !!i.overdue, days_overdue: i.days_overdue || 0, fine: i.accrued_fine || 0, renewals: i.renewals || 0 })),
+      reservations: d.reservations.map((r) => ({ title: r.title, isbn: r.isbn, status: r.status, queue_position: r.queue_position ?? null,
+        hold_until: r.hold_until || null, next_due_on: r.next_due_on || null })),
+      history: d.history.slice().sort((a, b) => String(b.returned_on).localeCompare(String(a.returned_on))).slice(0, 10)
+        .map((i) => ({ title: i.title, isbn: i.isbn, issued_on: i.issued_on, returned_on: i.returned_on, fine: Number(i.fine) || 0, fine_paid: !!i.fine_paid })),
+    };
+  }));
 
   app.use('/api', (req, res) => res.status(404).json({ error: `No API route for ${req.method} ${req.originalUrl}` }));
   // Malformed JSON bodies and other middleware errors -> JSON

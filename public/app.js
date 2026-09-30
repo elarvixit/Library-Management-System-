@@ -34,6 +34,7 @@ function hl(text, q) {
 }
 
 const ICONS = {
+  whatsapp: '<path d="M3 21l1.65-4.95A8.5 8.5 0 1 1 8 19.4z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1.3-1.3-1.8-.9-.8.8a4 4 0 0 1-2.8-2.8l.8-.8-.9-1.8z"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>',
   list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
   book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
@@ -544,6 +545,7 @@ renderers.dashboard = async () => {
 
       <div class="card b-8">
         <div class="card-head b"><div><h2>Needs attention</h2><p>Follow up on these today</p></div>
+          <button class="btn sm wa-btn" data-act="reminders" type="button">${icon('whatsapp')}Send reminders</button>
           <div class="right tabs mini-tabs" id="attn-tabs">
             <button data-attn="overdue" class="${ui.attn === 'overdue' ? 'on' : ''}"><i class="dotc red"></i>Overdue <span class="tab-count">${attnCounts.overdue}</span></button>
             <button data-attn="due" class="${ui.attn === 'due' ? 'on' : ''}"><i class="dotc amber"></i>Due soon <span class="tab-count">${attnCounts.due}</span></button>
@@ -607,7 +609,7 @@ function renderAttention(kind, rows) {
       { label: 'Member', render: (r) => who(r.member_name, esc(r.phone || r.member_code)) },
       { label: 'Late', render: (r) => badge(plural(r.days_overdue, 'day'), 'red') },
       { label: 'Fine', cls: 'num', render: (r) => `<b>${rupees(r.accrued_fine)}</b>` },
-      { label: '', cls: 'num', render: (r) => `<button class="btn sm" data-act="return" data-id="${r.id}">${icon('arrowIn')}Return</button>` },
+      { label: '', cls: 'num', render: (r) => `<div class="row-actions">${waButton('loan', r.id, r.phone, true)}<button class="btn sm" data-act="return" data-id="${r.id}">${icon('arrowIn')}Return</button></div>` },
     ], rows, empty('checkCircle', 'Nothing is overdue', 'Every book on loan is within its due date.', 'sm'));
   }
   if (kind === 'due') {
@@ -615,14 +617,14 @@ function renderAttention(kind, rows) {
       { label: 'Book', render: (r) => bookWho(r.title, esc(r.author)) },
       { label: 'Member', render: (r) => who(r.member_name, esc(r.phone || r.member_code)) },
       { label: 'Due', render: (r) => `${fmtShort(r.due_on)}<div class="sub">${relDays(r.due_on)}</div>` },
-      { label: '', cls: 'num', render: (r) => `<div class="row-actions"><button class="btn sm" data-act="renew" data-id="${r.id}">${icon('renew')}Renew</button><button class="btn sm" data-act="return" data-id="${r.id}">Return</button></div>` },
+      { label: '', cls: 'num', render: (r) => `<div class="row-actions">${waButton('loan', r.id, r.phone, true)}<button class="btn sm" data-act="renew" data-id="${r.id}">${icon('renew')}Renew</button><button class="btn sm" data-act="return" data-id="${r.id}">Return</button></div>` },
     ], rows, empty('calendar', `Nothing due in the next ${RULES.DUE_SOON_DAYS} days`, '', 'sm'));
   }
   return rows.length ? `<div class="rows">${rows.map((r) => {
     const left = daysBetween(TODAY, r.hold_until);
     return `<div class="rowi">${cover(r.title)}<div class="grow"><b>${esc(r.title)}</b><span class="sub">for ${esc(r.member_name)} · ${esc(r.member_code)}</span>
       <div class="small countdown ${left <= 0 ? 'urgent' : ''}">${left <= 0 ? 'Last day to collect' : `Held until ${fmtShort(r.hold_until)} · ${plural(left, 'day')} left`}</div></div>
-      <div class="row-actions"><button class="btn sm ghost" data-act="copy-msg" data-id="${r.id}" title="Copy pickup message">${icon('copy')}</button>
+      <div class="row-actions">${waButton('pickup', r.id, r.phone, true)}<button class="btn sm ghost" data-act="copy-msg" data-id="${r.id}" title="Copy pickup message">${icon('copy')}</button>
       <button class="btn sm success" data-act="issue-hold" data-member="${r.member_id}" data-book="${r.book_id}">${icon('arrowOut')}Issue</button></div></div>`;
   }).join('')}</div>` : empty('inbox', 'Nothing waiting at the desk', 'Copies returned for reservers appear here.', 'sm');
 }
@@ -939,8 +941,8 @@ function renewBlock(l) {
 }
 function loanActions(l, compact = false) {
   const why = renewBlock(l);
-  return `<div class="row-actions">
-    <button class="btn sm" data-act="renew" data-id="${l.id}" ${why ? `disabled title="${esc(why)}"` : 'title="Extend by another loan period"'}>${icon('renew')}${compact ? '' : 'Renew'}</button>
+  return `<div class="row-actions">${waButton('loan', l.id, l.phone, true)}
+    <button class="btn sm" data-act="renew" data-id="${l.id}" aria-label="Renew" ${why ? `disabled title="${esc(why)}"` : 'title="Extend by another loan period"'}>${icon('renew')}${compact ? '' : 'Renew'}</button>
     <button class="btn sm primary" data-act="return" data-id="${l.id}">${icon('arrowIn')}Return</button></div>`;
 }
 
@@ -967,13 +969,13 @@ renderers.returns = async () => {
   $('#loans-table').innerHTML = table([
     { label: 'Book', render: (r) => bookWho(r.title, `<span class="mono">${hl(r.isbn, q)}</span>`, q) },
     { label: 'Member', render: (r) => who(r.member_name, hl(r.member_code, q), q) },
-    { label: 'Issued', render: (r) => fmtDate(r.issued_on) },
-    { label: 'Due', render: (r) => `${fmtDate(r.due_on)}<div class="sub">${r.returned_on ? '' : relDays(r.due_on)}${r.renewals ? ` · renewed ${r.renewals}×` : ''}</div>` },
+    { label: 'Issued', render: (r) => `<span class="nowrap">${fmtDate(r.issued_on)}</span>` },
+    { label: 'Due', render: (r) => `<span class="nowrap">${fmtDate(r.due_on)}</span><div class="sub nowrap">${r.returned_on ? '' : relDays(r.due_on)}${r.renewals ? ` · renewed ${r.renewals}×` : ''}</div>` },
     { label: 'Status', render: (r) => (r.returned_on ? badge(`Returned ${fmtShort(r.returned_on)}`)
       : r.overdue ? badge(`${plural(r.days_overdue, 'day')} overdue`, 'red', true)
         : daysBetween(TODAY, r.due_on) <= RULES.DUE_SOON_DAYS ? badge('Due soon', 'amber', true) : badge('On time', 'green', true)) },
     { label: 'Fine', cls: 'num', render: (r) => (r.accrued_fine ? `<b>${rupees(r.accrued_fine)}</b><div class="sub">${r.returned_on ? (r.fine_paid ? 'paid' : 'unpaid') : 'accruing'}</div>` : '<span class="muted">—</span>') },
-    { label: '', cls: 'num', render: (r) => (r.returned_on ? '' : loanActions(r)) },
+    { label: '', cls: 'num', render: (r) => (r.returned_on ? '' : loanActions(r, true)) },
   ], shown, q ? empty('search', 'No loans match your search', 'Try a member name, member ID, title or ISBN.') : empty('checkCircle', {
     overdue: 'Nothing is overdue', 'due-soon': 'Nothing is due soon', returned: 'No returns yet', active: 'No books on loan', all: 'No loans yet' }[ui.loanFilter]));
 };
@@ -1103,6 +1105,85 @@ async function copyPickupMessage(resId) {
   if (!r) return;
   const text = `Hi ${r.member_name.split(' ')[0]}, your reserved book "${r.title}" is ready for pickup at the library. We'll hold it for you until ${fmtDate(r.hold_until)}.`;
   try { await navigator.clipboard.writeText(text); toast(text, 'ok', { title: 'Pickup message copied' }); } catch { openModal({ title: 'Pickup message', ok: 'Done', hideCancel: true, body: `<textarea rows="4" readonly>${esc(text)}</textarea>` }); }
+}
+
+// ===================================================================== WhatsApp reminders
+// Opens WhatsApp (app or web) with a ready-written message to the member; the librarian presses Send.
+// Messages sent today are remembered in this browser so the list shows who has already been reminded.
+const MEMBER_PAGE = `${location.origin}/member`;
+function waNumber(phone) {
+  const d = String(phone || '').replace(/\D/g, '');
+  if (d.length === 10) return `91${d}`;                    // Indian mobile without country code
+  if (d.length === 11 && d.startsWith('0')) return `91${d.slice(1)}`;
+  if (d.length >= 11 && d.length <= 15) return d;             // already has a country code
+  return '';
+}
+const reminded = (() => { try { return JSON.parse(localStorage.getItem('lib-reminded') || '{}'); } catch { return {}; } })();
+const sentToday = (key) => reminded[key] === TODAY;
+function markSent(key) {
+  reminded[key] = TODAY;
+  for (const k of Object.keys(reminded)) if (reminded[k] !== TODAY) delete reminded[k];
+  try { localStorage.setItem('lib-reminded', JSON.stringify(reminded)); } catch { /* ignore */ }
+  for (const b of $$(`[data-wa="${key}"]`)) { b.classList.add('sent'); b.title = 'Reminder sent today · click to send again'; }
+}
+function waButton(kind, id, phone, compact = false) {
+  const key = `${kind}:${id}`;
+  if (!waNumber(phone)) return `<button class="btn sm wa-btn" disabled title="No valid phone number for this member">${icon('whatsapp')}${compact ? '' : 'WhatsApp'}</button>`;
+  const sent = sentToday(key);
+  return `<button class="btn sm wa-btn ${sent ? 'sent' : ''}" data-act="wa-${kind}" data-id="${id}" data-wa="${key}" title="${sent ? 'Reminder sent today · click to send again' : 'Send a WhatsApp reminder'}" aria-label="Send WhatsApp reminder">${icon('whatsapp')}${compact ? '' : 'WhatsApp'}</button>`;
+}
+function loanMessage(l) {
+  const first = String(l.member_name).split(' ')[0];
+  const left = daysBetween(TODAY, l.due_on);
+  const fine = l.accrued_fine || l.days_overdue * RULES.FINE_PER_DAY;
+  if (l.overdue) {
+    return `Hi ${first}, this is a reminder from the library. The book "${l.title}" was due on ${fmtDate(l.due_on)} and is now ${plural(l.days_overdue, 'day')} late. `
+      +`The late fine so far is ₹${fine} (₹${RULES.FINE_PER_DAY} per day). Please return it as soon as you can.\n\nCheck your books: ${MEMBER_PAGE}\nYour member ID: ${l.member_code}`;
+  }
+  const when = left <= 0 ? 'today' : left === 1 ? 'tomorrow' : `on ${fmtDate(l.due_on)}`;
+  return `Hi ${first}, a friendly reminder from the library: "${l.title}" is due ${when}. Please return or renew it by then to avoid a late fine of ₹${RULES.FINE_PER_DAY} per day.\n\n`
+    + `Check your books: ${MEMBER_PAGE}\nYour member ID: ${l.member_code}`;
+}
+function sendWhatsApp(phone, text, key) {
+  const n = waNumber(phone);
+  if (!n) { toast('This member has no valid phone number. Add one on their member page.', 'warn'); return; }
+  window.open(`https://wa.me/${n}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+  markSent(key);
+}
+async function findLoan(id) {
+  return state.loans.find((l) => l.id === id) || state.dash?.overdue?.find((l) => l.id === id)
+    || (await api('GET', '/api/issues?status=active')).find((l) => l.id === id);
+}
+async function whatsappLoan(id) {
+  const l = await findLoan(id);
+  if (!l) { toast('That loan has already been returned.', 'warn'); return; }
+  sendWhatsApp(l.phone, loanMessage(l), `loan:${id}`);
+}
+function whatsappPickup(id) {
+  const r = state.reservations.find((x) => x.id === id) || state.dash.readyForPickup.find((x) => x.id === id);
+  if (!r) return;
+  const text = `Hi ${String(r.member_name).split(' ')[0]}, good news from the library: your reserved book "${r.title}" is ready to collect. `
+    + `We'll keep it for you until ${fmtDate(r.hold_until)}.\n\nCheck your books: ${MEMBER_PAGE}\nYour member ID: ${r.member_code}`;
+  sendWhatsApp(r.phone, text, `pickup:${id}`);
+}
+function openReminders() {
+  const overdue = state.loans.filter((l) => l.overdue).sort((a, b) => b.days_overdue - a.days_overdue);
+  const due = state.loans.filter((l) => !l.overdue && daysBetween(TODAY, l.due_on) <= RULES.DUE_SOON_DAYS).sort((a, b) => a.due_on.localeCompare(b.due_on));
+  const pickup = (state.dash?.readyForPickup || []);
+  const row = (kind, id, phone, name, code, title, tag) => `<div class="rem-row">${cover(title)}<div class="grow"><b>${esc(name)}</b>
+      <div class="sub">${esc(code)} · ${esc(title)}</div></div>${tag}${waButton(kind, id, phone)}</div>`;
+  const group = (label, rows) => (rows.length ? `<div class="rem-group"><h4>${label} <span class="muted">(${rows.length})</span></h4>${rows.join('')}</div>` : '');
+  const total = overdue.length + due.length + pickup.length;
+  openModal({
+    title: 'Send WhatsApp reminders', sub: 'Each button opens WhatsApp with the message written for you. Press Send in WhatsApp.',
+    ic: 'whatsapp', icTone: 'tone-green', ok: null, cancel: 'Close', wide: true,
+    body: total ? `<div class="rem-list">
+      ${group('Overdue', overdue.map((l) => row('loan', l.id, l.phone, l.member_name, l.member_code, l.title, badge(`${plural(l.days_overdue, 'day')} late`, 'red'))))}
+      ${group(`Due in the next ${RULES.DUE_SOON_DAYS} days`, due.map((l) => row('loan', l.id, l.phone, l.member_name, l.member_code, l.title, badge(relDays(l.due_on), 'amber'))))}
+      ${group('Ready to collect', pickup.map((r) => row('pickup', r.id, r.phone, r.member_name, r.member_code, r.title, badge(`until ${fmtShort(r.hold_until)}`, 'green'))))}
+      </div><p class="muted small" style="margin:12px 0 0">A green tick means you already sent that reminder today from this browser.</p>`
+      : empty('checkCircle', 'Nobody needs a reminder', 'No books are overdue, due soon or waiting to be collected.', 'sm'),
+  });
 }
 
 // ===================================================================== fines
@@ -1589,6 +1670,9 @@ document.addEventListener('click', (e) => {
       'cancel-res': () => cancelReservation(num()),
       'issue-hold': () => quickIssue(num('member'), num('book')),
       'copy-msg': () => copyPickupMessage(num()),
+      'wa-loan': () => whatsappLoan(num()),
+      'wa-pickup': () => whatsappPickup(num()),
+      reminders: openReminders,
     };
     if (acts[btn.dataset.act]) { e.stopPropagation(); Promise.resolve(acts[btn.dataset.act]()).catch(fail); return; }
   }

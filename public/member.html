@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Library · Library Desk</title>
+<meta name="description" content="Check your borrowed books, due dates, fines and reservations.">
+<link rel="icon" type="image/svg+xml" href="img/logo.svg">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="member.css">
+<script>try { const t = localStorage.getItem('lib-theme'); if (t) document.documentElement.dataset.theme = t; } catch { /* storage unavailable */ }</script>
+</head>
+<body class="portal">
+<div class="mp">
+  <header class="mp-top">
+    <a class="mp-brand" href="/member"><img src="img/logo.svg" alt="" width="36" height="36"><span><b>Library Desk</b><small>My Library</small></span></a>
+    <button class="mp-btn ghost" id="mp-logout" type="button" hidden>Sign out</button>
+  </header>
+
+  <main id="mp-main">
+    <section class="mp-card mp-login" id="mp-login">
+      <h1>Check your books</h1>
+      <p class="mp-muted">See what you've borrowed, when it's due, your fines and your reservations.</p>
+      <form id="mp-form" novalidate>
+        <label>Member ID<input name="code" id="mp-code" autocomplete="username" placeholder="e.g. M0061" required maxlength="20" autocapitalize="characters"></label>
+        <label>Last 4 digits of your phone number<input name="phone" id="mp-phone" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="••••" required autocomplete="off"></label>
+        <p class="mp-error" id="mp-error" role="alert"></p>
+        <button class="mp-btn primary" id="mp-go" type="submit">Show my books</button>
+      </form>
+      <p class="mp-muted small">Your member ID is on your library card. This page only shows your records; it can't change anything.</p>
+    </section>
+    <div id="mp-view" hidden></div>
+  </main>
+
+  <footer class="mp-foot">© <span id="mp-year">2026</span> Elarvix Technologies · Library Desk</footer>
+</div>
+<script src="member.js"></script>
+</body>
+</html>

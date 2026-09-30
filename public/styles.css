@@ -1028,6 +1028,22 @@ body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events
 .legal li { margin: 3px 0; }
 @media (max-width: 640px) { .site-footer { padding: 18px 16px; gap: 8px; } }
 
+/* WhatsApp reminders */
+.btn.wa-btn { color: #15803d; border-color: color-mix(in srgb, #25d366 45%, var(--line)); background: color-mix(in srgb, #25d366 8%, var(--surface)); }
+.btn.wa-btn:hover:not(:disabled) { background: color-mix(in srgb, #25d366 16%, var(--surface)); }
+.btn.wa-btn.sent { background: #25d366; border-color: #1fb457; color: #fff; }
+:root[data-theme="dark"] .btn.wa-btn:not(.sent) { color: #4ade80; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.wa-btn:not(.sent) { color: #4ade80; } }
+.card-head .wa-btn { margin-left: auto; margin-right: 10px; }
+#loans-table .who b { white-space: normal; overflow-wrap: anywhere; }
+.rem-list { display: grid; gap: 16px; max-height: 60vh; overflow-y: auto; }
+.rem-group h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.rem-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.rem-row:last-child { border-bottom: 0; }
+.rem-row .grow { flex: 1; min-width: 0; }
+.rem-row .sub { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .card-head .wa-btn { margin: 8px 0 0; } .rem-row .badge { display: none; } }
+
 /* phone layout — kept last so it overrides the component rules above */
 @media (max-width: 640px) {
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
