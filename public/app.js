@@ -1717,6 +1717,38 @@ try { savedTheme = localStorage.getItem('lib-theme'); } catch { /* storage unava
 applyTheme(savedTheme);
 hydrateIcons();
 window.addEventListener('hashchange', route);
+
+// ===================================================================== live visitors
+// Every open tab checks in every 20 s; the server counts tabs seen in the last minute.
+const live = { sid: '', data: null };
+try { live.sid = sessionStorage.getItem('ld-sid') || ''; } catch {}
+if (!live.sid) {
+  live.sid = (crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36));
+  try { sessionStorage.setItem('ld-sid', live.sid); } catch {}
+}
+async function livePing() {
+  if (document.hidden) return;
+  try {
+    live.data = await api('POST', '/api/presence', { sid: live.sid, page: ui.view || 'dashboard' });
+    renderLive();
+  } catch { $('#live-count').textContent = '–'; }
+}
+function renderLive() {
+  const d = live.data;
+  if (!d) return;
+  $('#live-count').textContent = d.online;
+  $('#live-btn').setAttribute('aria-label', `${plural(d.online, 'person', 'people')} online now`);
+  const name = (p) => PAGES[p]?.title || (p ? p[0].toUpperCase() + p.slice(1) : 'Other');
+  $('#live-pop').innerHTML = `<div class="pop-head"><b><span class="live-dot"></span> Live now</b><span class="muted small">${plural(d.online, 'person', 'people')} online</span></div>
+    <div class="pop-list">${d.pages.map((r) => `<div class="live-row"><span>${esc(name(r.page))}</span><b>${r.count}</b></div>`).join('')}</div>
+    <div class="live-foot muted small">Updates every 20 seconds · counts open browser tabs</div>`;
+}
+$('#live-btn').addEventListener('click', () => { $('#live-pop').hidden = !$('#live-pop').hidden; if (!$('#live-pop').hidden) livePing(); });
+document.addEventListener('click', (e) => { if (!e.target.closest('.live-wrap')) $('#live-pop').hidden = true; });
+window.addEventListener('hashchange', () => setTimeout(livePing, 50));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) livePing(); });
+setInterval(livePing, 20_000);
+livePing();
 (async () => {
   try {
     if (!location.hash) history.replaceState(null, '', '#/dashboard');

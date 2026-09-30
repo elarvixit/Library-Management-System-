@@ -969,6 +969,17 @@ export class Library {
     });
   }
 
+  /** Heartbeat from an open browser tab; returns how many tabs are live right now and on which pages. */
+  presence({ sid, page } = {}, now = Date.now()) {
+    const p = presenceInput(sid, page);
+    this.run('DELETE FROM presence WHERE seen_at < ?', now - PRESENCE_KEEP_MS);
+    if (p.sid) this.run(`INSERT INTO presence (sid, page, seen_at) VALUES (?, ?, ?)
+      ON CONFLICT(sid) DO UPDATE SET page = excluded.page, seen_at = excluded.seen_at`, p.sid, p.page, now);
+    const pages = this.q(`SELECT page, COUNT(*) AS count FROM presence WHERE seen_at >= ?
+      GROUP BY page ORDER BY count DESC, page`, now - PRESENCE_WINDOW_MS);
+    return presenceResult(pages);
+  }
+
   /** Test/diagnostic helper: true when every book satisfies the copy accounting invariant. */
   checkInvariants() {
     const bad = this.q(
@@ -980,6 +991,20 @@ export class Library {
       .filter((b) => b.total_copies !== b.available_copies + b.issued + b.held || (b.waiting > 0 && b.available_copies > 0));
     return bad;
   }
+}
+
+// A tab counts as "online" if it checked in within the last minute (the page pings every 20 s).
+export const PRESENCE_WINDOW_MS = 60_000;
+const PRESENCE_KEEP_MS = 5 * 60_000;
+export function presenceInput(sid, page) {
+  return {
+    sid: /^[A-Za-z0-9-]{8,64}$/.test(String(sid ?? '')) ? String(sid) : '',
+    page: String(page ?? '').replace(/[^a-z-]/g, '').slice(0, 30),
+  };
+}
+export function presenceResult(pages) {
+  const list = pages.map((r) => ({ page: r.page, count: Number(r.count) }));
+  return { online: list.reduce((n, r) => n + r.count, 0), pages: list };
 }
 
 const BOOK_SELECT = `

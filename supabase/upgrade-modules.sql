@@ -377,3 +377,11 @@ alter view v_dashboard set (security_invoker = true);
 revoke execute on function issue_book(bigint, bigint, date, date), return_book(bigint, date), renew_issue(bigint),
   reserve_book(bigint, bigint), cancel_reservation(bigint), pay_fines(bigint), delete_book(bigint),
   expire_holds(), _drain_queue(bigint), _copy_back(bigint) from public, anon, authenticated;
+
+-- Live visitors counter (one row per open browser tab; no personal data)
+create table if not exists presence (
+  sid     text primary key,
+  page    text not null default '',
+  seen_at timestamptz not null default now()
+);
+alter table presence enable row level security;

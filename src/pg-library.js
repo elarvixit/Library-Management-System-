@@ -8,8 +8,7 @@ import pg from 'pg';
 import {
   RULES, LibraryError, addDays, daysBetween, computeFine, parseDate, requiredText, optionalText,
   positiveInt, normalizeIsbn, validEmail, validPhone, bool, bookExtras, membershipInput, acquisitionInput, digitalInput,
-  addMonths, ACQ_STATUSES, DIGITAL_TYPES,
-} from './library.js';
+  addMonths, ACQ_STATUSES, DIGITAL_TYPES, presenceInput, presenceResult, PRESENCE_WINDOW_MS } from './library.js';
 
 // Return DATE columns as 'YYYY-MM-DD' strings and counts/sums as numbers (not strings).
 pg.types.setTypeParser(1082, (v) => v);
@@ -706,5 +705,26 @@ export class PgLibrary {
           from reservations r join books b on b.id = r.book_id join members m on m.id = r.member_id
          where r.closed_on is not null and r.status in ('expired', 'cancelled')
       ) e order by date desc, seq desc limit $1`, [limit]);
+  }
+
+  // ---------------------------------------------------------------- live visitors
+  /** Heartbeat from an open browser tab; returns how many tabs are live right now and on which pages. */
+  async presence({ sid, page } = {}) {
+    if (this.configError) throw this.configError;
+    const p = presenceInput(sid, page);
+    // The table is created on first use, so no extra SQL script is needed.
+    this.presenceReady ??= this.pool.query(`create table if not exists presence (
+        sid text primary key, page text not null default '', seen_at timestamptz not null default now());
+      alter table presence enable row level security;`).catch((err) => { this.presenceReady = null; throw err; });
+    await this.presenceReady;
+    const res = await this.pool.query(`
+      with gone as (delete from presence where seen_at < now() - interval '5 minutes'),
+           upsert as (insert into presence (sid, page, seen_at) select $1, $2, now() where $1 <> ''
+                        on conflict (sid) do update set page = excluded.page, seen_at = excluded.seen_at returning sid, page)
+      select page, count(*)::int as count from (
+        select sid, page from presence where seen_at >= now() - ($3 || ' milliseconds')::interval and sid <> $1
+        union all select sid, page from upsert) live
+      group by page order by count desc, page`, [p.sid, p.page, String(PRESENCE_WINDOW_MS)]);
+    return presenceResult(res.rows);
   }
 }

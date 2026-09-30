@@ -100,6 +100,13 @@ CREATE TABLE IF NOT EXISTS digital_resources (
   views       INTEGER NOT NULL DEFAULT 0,
   deleted     INTEGER NOT NULL DEFAULT 0
 );
+
+-- Live visitors: one row per open browser tab, refreshed by a heartbeat (no personal data)
+CREATE TABLE IF NOT EXISTS presence (
+  sid      TEXT PRIMARY KEY,
+  page     TEXT NOT NULL DEFAULT '',
+  seen_at  INTEGER NOT NULL            -- epoch milliseconds
+);
 `;
 
 // Columns added after the first version: [table, column, definition]

@@ -580,3 +580,17 @@ describe('CSV', () => {
     assert.equal(csv, 'a,b\r\n"x,y",\'=SUM(1)\r\n"say ""hi""",5\r\n');
   });
 });
+
+describe('live visitors', () => {
+  test('counts each open tab once, groups by page and forgets tabs after a minute', () => {
+    const t = 1_000_000;
+    lib.presence({ sid: 'tab-aaaa-1', page: 'dashboard' }, t);
+    lib.presence({ sid: 'tab-bbbb-2', page: 'books' }, t);
+    let r = lib.presence({ sid: 'tab-aaaa-1', page: 'books' }, t + 1000);
+    assert.deepEqual(r, { online: 2, pages: [{ page: 'books', count: 2 }] });
+    r = lib.presence({ sid: 'tab-cccc-3', page: 'members' }, t + 61_000); // the first two went quiet
+    assert.deepEqual(r, { online: 2, pages: [{ page: 'books', count: 1 }, { page: 'members', count: 1 }] });
+    r = lib.presence({ sid: 'bad id', page: '<b>' }, t + 62_000); // invalid ids are not stored
+    assert.equal(r.online, 1);
+  });
+});

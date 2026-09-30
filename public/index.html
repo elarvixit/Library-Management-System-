@@ -55,6 +55,10 @@
         <span data-icon="search"></span><span class="st-text">Search books, members, actions…</span><kbd>Ctrl K</kbd>
       </button>
       <div class="top-actions">
+        <div class="live-wrap">
+          <button class="live-pill" id="live-btn" type="button" aria-haspopup="true" title="People using the website right now"><span class="live-dot"></span><b id="live-count">…</b><span class="live-label">online</span></button>
+          <div class="popover live-pop" id="live-pop" hidden></div>
+        </div>
         <button class="ai-top-btn" id="ai-top-btn" type="button" aria-label="Open Library Assistant" title="Library Assistant (A)"><span class="ai-spark"><span class="bot-emoji" aria-hidden="true">🤖</span></span></button>
         <div class="bell-wrap">
           <button class="icon-btn" id="bell-btn" type="button" aria-label="Notifications" aria-haspopup="true"><span data-icon="bell"></span><span class="bell-dot" id="bell-dot" hidden></span></button>

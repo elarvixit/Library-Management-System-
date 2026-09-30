@@ -126,6 +126,9 @@ export function createApp(lib) {
     Promise.resolve(lib.listIssues({ status: 'overdue' })).then((list) => list.map((r) =>
       [r.member_code, r.member_name, r.phone, r.email, r.title, r.isbn, r.issued_on, r.due_on, r.days_overdue, r.accrued_fine]))));
 
+  // Live visitors (heartbeat from every open tab)
+  app.post('/api/presence', h((req) => lib.presence(req.body ?? {})));
+
   app.use('/api', (req, res) => res.status(404).json({ error: `No API route for ${req.method} ${req.originalUrl}` }));
   // Malformed JSON bodies and other middleware errors -> JSON
   app.use((err, req, res, _next) => {
