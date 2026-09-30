@@ -857,3 +857,8 @@ dialog::backdrop { background: rgba(16, 24, 40, .5); backdrop-filter: blur(3px);
 .as-logo { background: linear-gradient(135deg, #eef2ff, #e0e7ff); box-shadow: inset 0 0 0 1px rgba(79, 70, 229, .25); }
 .as-logo .bot-emoji { font-size: 21px; }
 .as-avatar .bot-emoji { font-size: 16px; }
+
+/* Assistant button: robot symbol only */
+.ai-top-btn { width: 40px; height: 40px; padding: 0; justify-content: center; border-radius: 50%; }
+.ai-top-btn .ai-spark { width: 30px; height: 30px; }
+.ai-top-btn .ai-spark .bot-emoji { font-size: 18px; }
