@@ -412,7 +412,7 @@ td .sub, .sub { color: var(--muted); font-size: 12.5px; }
 .chart-tip .tt-r { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
 .chart-tip .tt-r i { width: 9px; height: 9px; border-radius: 3px; }
 .chart-tip .tt-r b { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; }
-.sr-table { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.sr-table { position: absolute; display: block; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 
 /* =====================================================================
    Issue flow

@@ -1721,7 +1721,7 @@ window.addEventListener('hashchange', route);
 // ===================================================================== footer & legal pages
 const LEGAL = {
   privacy: { title: 'Privacy Policy', ic: 'idCard', body: `
-    <p>Library Desk is operated by Elarvix Technologies to run the day-to-day work of the library.</p>
+    <p>Library Desk is operated by Pavan Technologies to run the day-to-day work of the library.</p>
     <h4>What we store</h4>
     <ul><li><b>Members:</b> name, member ID, phone, email, membership type and validity.</li>
       <li><b>Library records:</b> books, loans, returns, reservations, fines and payments.</li>
@@ -1743,7 +1743,7 @@ const LEGAL = {
     <h4>Availability</h4>
     <p>We aim to keep the service running but cannot promise it will always be available or error free.</p>
     <h4>Changes</h4>
-    <p>Elarvix Technologies may update these terms; the latest version is always shown here.</p>` },
+    <p>Pavan Technologies may update these terms; the latest version is always shown here.</p>` },
   cookies: { title: 'Cookie Policy', ic: 'info', body: `
     <p><b>Library Desk does not use cookies</b>, and there is no advertising or third-party tracking.</p>
     <h4>What your browser keeps</h4>
@@ -1760,7 +1760,7 @@ function openLegal(key) {
   const r = RULES || {};
   const body = doc.body.replace('{LOAN}', r.LOAN_DAYS ?? 14).replace('{MAX}', r.MAX_ACTIVE_ISSUES ?? 3)
     .replace('{FINE}', `₹${r.FINE_PER_DAY ?? 5}`).replace('{HOLD}', r.HOLD_DAYS ?? 2);
-  openModal({ title: doc.title, sub: 'Elarvix Technologies · Library Desk', ic: doc.ic, body: `<div class="legal">${body}</div>`,
+  openModal({ title: doc.title, sub: 'Pavan Technologies · Library Desk', ic: doc.ic, body: `<div class="legal">${body}</div>`,
     ok: 'Got it', hideCancel: true, wide: true, onSubmit: () => {} });
 }
 $('#footer-year').textContent = new Date().getFullYear();
