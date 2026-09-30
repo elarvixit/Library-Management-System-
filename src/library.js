@@ -17,9 +17,6 @@ export const RULES = Object.freeze({
   DUE_SOON_DAYS: 3,     // "due soon" window on the dashboard
 });
 
-export const STAFF_ROLES = ['Admin', 'Librarian', 'Assistant'];
-export const STAFF_SHIFTS = ['Morning', 'Evening', 'Full day'];
-
 export class LibraryError extends Error {
   constructor(message, status = 400) {
     super(message);
@@ -409,13 +406,12 @@ export class Library {
     });
   }
 
-  payFines(memberId, { staffId } = {}) {
+  payFines(memberId) {
     return this.tx(() => {
       const member = this.#member(memberId);
-      const by = this.#actor(staffId);
       const amount = this.#unpaidFines(member.id);
       if (amount === 0) throw new LibraryError(`${member.name} has no unpaid fines.`);
-      this.run('UPDATE issues SET fine_paid = 1, paid_on = ?, paid_by = ? WHERE member_id = ? AND fine > 0 AND fine_paid = 0', this.today(), by, member.id);
+      this.run('UPDATE issues SET fine_paid = 1, paid_on = ? WHERE member_id = ? AND fine > 0 AND fine_paid = 0', this.today(), member.id);
       return { paid: amount, member: this.getMember(member.id) };
     });
   }
@@ -431,12 +427,11 @@ export class Library {
    *     may borrow; everyone else is refused
    *  6. otherwise a shelf copy must be available
    */
-  issueBook({ memberId, bookId, issuedOn, dueOn, staffId } = {}) {
+  issueBook({ memberId, bookId, issuedOn, dueOn } = {}) {
     return this.tx(() => {
       const today = this.today();
       const member = this.#member(memberId);
       const book = this.#book(bookId);
-      const by = this.#actor(staffId);
       const issueDate = issuedOn ? parseDate(issuedOn, 'Issue date') : today;
       if (issueDate > today) throw new LibraryError('Issue date cannot be in the future.');
       const dueDate = dueOn ? parseDate(dueOn, 'Due date') : addDays(issueDate, RULES.LOAN_DAYS);
@@ -477,14 +472,13 @@ export class Library {
         this.run('UPDATE books SET available_copies = available_copies - 1 WHERE id = ?', book.id);
       }
       const { lastInsertRowid } = this.run(
-        'INSERT INTO issues (book_id, member_id, issued_on, due_on, issued_by) VALUES (?, ?, ?, ?, ?)', book.id, member.id, issueDate, dueDate, by);
+        'INSERT INTO issues (book_id, member_id, issued_on, due_on) VALUES (?, ?, ?, ?)', book.id, member.id, issueDate, dueDate);
       return { ...this.getIssue(Number(lastInsertRowid)), fromReservation: !!ownHold };
     });
   }
 
-  returnBook(issueId, { returnedOn, staffId } = {}) {
+  returnBook(issueId, { returnedOn } = {}) {
     return this.tx(() => {
-      const by = this.#actor(staffId);
       const today = this.today();
       const issue = this.one('SELECT * FROM issues WHERE id = ?', id(issueId, 'issue'));
       if (!issue) throw notFound('Issue record');
@@ -494,7 +488,7 @@ export class Library {
       if (returnDate < issue.issued_on) throw new LibraryError(`Return date cannot be before the issue date (${issue.issued_on}).`);
 
       const { daysLate, fine } = computeFine(issue.due_on, returnDate);
-      this.run('UPDATE issues SET returned_on = ?, fine = ?, returned_by = ? WHERE id = ?', returnDate, fine, by, issue.id);
+      this.run('UPDATE issues SET returned_on = ?, fine = ? WHERE id = ?', returnDate, fine, issue.id);
       const promoted = this.#copyBackToShelf(issue.book_id);
       return { ...this.getIssue(issue.id), daysLate, fine, readyFor: promoted[0] ?? null };
     });
@@ -570,10 +564,8 @@ export class Library {
   #issueRows(where, ...params) {
     const today = this.today();
     return this.q(
-      `SELECT i.*, b.title, b.author, b.isbn, m.name AS member_name, m.member_code, m.phone, m.email,
-              s1.name AS issued_by_name, s2.name AS returned_by_name, s3.name AS paid_by_name
+      `SELECT i.*, b.title, b.author, b.isbn, m.name AS member_name, m.member_code, m.phone, m.email
          FROM issues i JOIN books b ON b.id = i.book_id JOIN members m ON m.id = i.member_id
-         LEFT JOIN staff s1 ON s1.id = i.issued_by LEFT JOIN staff s2 ON s2.id = i.returned_by LEFT JOIN staff s3 ON s3.id = i.paid_by
         WHERE ${where} ORDER BY i.due_on, i.id`, ...params)
       .map((r) => {
         if (r.returned_on) return { ...r, overdue: false, days_overdue: 0, accrued_fine: r.fine };
@@ -583,11 +575,10 @@ export class Library {
   }
 
   // --- reservations ------------------------------------------------------------------------
-  reserveBook({ memberId, bookId, staffId } = {}) {
+  reserveBook({ memberId, bookId } = {}) {
     return this.tx(() => {
       const member = this.#member(memberId);
       const book = this.#book(bookId);
-      const by = this.#actor(staffId);
       if (!member.active) throw conflict(`${member.name} is inactive and cannot reserve books.`);
       const open = this.one("SELECT * FROM reservations WHERE book_id = ? AND member_id = ? AND status IN ('waiting','ready')", book.id, member.id);
       if (open) {
@@ -602,7 +593,7 @@ export class Library {
         throw conflict(`"${book.title}" has ${plural(book.available_copies, 'copy')} available — issue it directly instead of reserving.`);
       }
       const { lastInsertRowid } = this.run(
-        "INSERT INTO reservations (book_id, member_id, reserved_on, status, created_by) VALUES (?, ?, ?, 'waiting', ?)", book.id, member.id, this.today(), by);
+        "INSERT INTO reservations (book_id, member_id, reserved_on, status) VALUES (?, ?, ?, 'waiting')", book.id, member.id, this.today());
       return this.#reservationRows('r.id = ?', Number(lastInsertRowid))[0];
     });
   }
@@ -719,108 +710,26 @@ export class Library {
   recentActivity(limit = 20) {
     const rows = this.q(`
       SELECT * FROM (
-        SELECT 'issued' AS type, i.issued_on AS date, i.id AS seq, b.title, m.name AS member_name, NULL AS amount, i.issued_by AS staff_id
+        SELECT 'issued' AS type, i.issued_on AS date, i.id AS seq, b.title, m.name AS member_name, NULL AS amount
           FROM issues i JOIN books b ON b.id = i.book_id JOIN members m ON m.id = i.member_id
         UNION ALL
-        SELECT 'returned', i.returned_on, i.id, b.title, m.name, i.fine, i.returned_by
+        SELECT 'returned', i.returned_on, i.id, b.title, m.name, i.fine
           FROM issues i JOIN books b ON b.id = i.book_id JOIN members m ON m.id = i.member_id WHERE i.returned_on IS NOT NULL
         UNION ALL
-        SELECT 'fine_paid', i.paid_on, i.id, b.title, m.name, i.fine, i.paid_by
+        SELECT 'fine_paid', i.paid_on, i.id, b.title, m.name, i.fine
           FROM issues i JOIN books b ON b.id = i.book_id JOIN members m ON m.id = i.member_id WHERE i.paid_on IS NOT NULL
         UNION ALL
-        SELECT 'reserved', r.reserved_on, r.id, b.title, m.name, NULL, r.created_by
+        SELECT 'reserved', r.reserved_on, r.id, b.title, m.name, NULL
           FROM reservations r JOIN books b ON b.id = r.book_id JOIN members m ON m.id = r.member_id
         UNION ALL
-        SELECT 'ready', r.ready_on, r.id, b.title, m.name, NULL, NULL
+        SELECT 'ready', r.ready_on, r.id, b.title, m.name, NULL
           FROM reservations r JOIN books b ON b.id = r.book_id JOIN members m ON m.id = r.member_id WHERE r.ready_on IS NOT NULL
         UNION ALL
-        SELECT r.status, r.closed_on, r.id, b.title, m.name, NULL, NULL
+        SELECT r.status, r.closed_on, r.id, b.title, m.name, NULL
           FROM reservations r JOIN books b ON b.id = r.book_id JOIN members m ON m.id = r.member_id
          WHERE r.closed_on IS NOT NULL AND r.status IN ('expired', 'cancelled')
-      ) e LEFT JOIN (SELECT id AS sid, name AS staff_name, role AS staff_role FROM staff) s ON s.sid = e.staff_id
-      ORDER BY date DESC,
-               CASE type WHEN 'fine_paid' THEN 3 WHEN 'returned' THEN 2 WHEN 'expired' THEN 2 WHEN 'cancelled' THEN 2 WHEN 'ready' THEN 2 ELSE 1 END DESC,
-               seq DESC LIMIT ?`, limit);
-    return rows.map(({ sid, ...r }) => r);
-  }
-
-  // --- staff -------------------------------------------------------------------------------
-  /** Staff id recorded on an action. Null is allowed (e.g. scripts); if given it must be active staff. */
-  #actor(staffId) {
-    if (staffId === undefined || staffId === null || staffId === '') return null;
-    const s = this.one('SELECT * FROM staff WHERE id = ?', id(staffId, 'staff member'));
-    if (!s) throw notFound('Staff member');
-    if (!s.active) throw conflict(`${s.name} is inactive and cannot perform library actions. Choose another staff member on duty.`);
-    return s.id;
-  }
-  #staffInput(input, { checkJoinDate = true } = {}) {
-    const role = String(input.role ?? 'Librarian').trim();
-    if (!STAFF_ROLES.includes(role)) throw new LibraryError(`Role must be one of: ${STAFF_ROLES.join(', ')}.`);
-    const shift = String(input.shift ?? 'Full day').trim();
-    if (!STAFF_SHIFTS.includes(shift)) throw new LibraryError(`Shift must be one of: ${STAFF_SHIFTS.join(', ')}.`);
-    const joinDate = input.join_date ? parseDate(input.join_date, 'Join date') : this.today();
-    if (checkJoinDate && joinDate > this.today()) throw new LibraryError('Join date cannot be in the future.');
-    return {
-      name: requiredText(input.name, 'Name', 120),
-      code: optionalText(input.staff_code ?? input.staffCode, 20).toUpperCase(),
-      role, shift, joinDate,
-      email: validEmail(input.email),
-      phone: validPhone(input.phone),
-      active: input.active === undefined ? true : bool(input.active),
-    };
-  }
-  #staffRow(where, ...params) {
-    const today = this.today();
-    return this.q(`${STAFF_SELECT} WHERE ${where} ORDER BY CASE s.role WHEN 'Admin' THEN 0 WHEN 'Librarian' THEN 1 ELSE 2 END, s.name COLLATE NOCASE`,
-      today, today, ...params);
-  }
-  /** At least one active Admin must always remain. */
-  #assertAdminRemains(exceptId) {
-    const n = this.one("SELECT COUNT(*) AS c FROM staff WHERE role = 'Admin' AND active = 1 AND id <> ?", exceptId).c;
-    if (!n) throw conflict('The library must keep at least one active Admin. Make another staff member an Admin first.');
-  }
-
-  listStaff() { return this.tx(() => this.#staffRow('1 = 1')); }
-
-  getStaff(staffId) {
-    return this.tx(() => {
-      const [s] = this.#staffRow('s.id = ?', id(staffId, 'staff member'));
-      if (!s) throw notFound('Staff member');
-      const recent = this.recentActivity(200).filter((e) => e.staff_id === s.id).slice(0, 25);
-      return { staff: s, recent };
-    });
-  }
-
-  addStaff(input) {
-    return this.tx(() => {
-      const s = this.#staffInput(input);
-      let code = s.code;
-      if (!code) {
-        const max = this.q("SELECT staff_code FROM staff WHERE staff_code GLOB 'S[0-9]*'").reduce((a, r) => Math.max(a, Number(r.staff_code.slice(1)) || 0), 0);
-        code = `S${String(max + 1).padStart(3, '0')}`;
-      }
-      if (this.one('SELECT 1 FROM staff WHERE staff_code = ?', code)) throw conflict(`Staff ID ${code} is already in use.`);
-      const { lastInsertRowid } = this.run(
-        'INSERT INTO staff (staff_code, name, role, email, phone, shift, join_date, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        code, s.name, s.role, s.email, s.phone, s.shift, s.joinDate, s.active ? 1 : 0);
-      return this.#staffRow('s.id = ?', Number(lastInsertRowid))[0];
-    });
-  }
-
-  updateStaff(staffId, input) {
-    return this.tx(() => {
-      const existing = this.one('SELECT * FROM staff WHERE id = ?', id(staffId, 'staff member'));
-      if (!existing) throw notFound('Staff member');
-      // only validate the join date when it is being changed
-      const s = this.#staffInput({ ...existing, active: !!existing.active, ...input },
-        { checkJoinDate: input.join_date !== undefined && input.join_date !== existing.join_date });
-      const code = s.code || existing.staff_code;
-      if (this.one('SELECT 1 FROM staff WHERE staff_code = ? AND id <> ?', code, existing.id)) throw conflict(`Staff ID ${code} is already in use.`);
-      if (existing.role === 'Admin' && existing.active && (s.role !== 'Admin' || !s.active)) this.#assertAdminRemains(existing.id);
-      this.run('UPDATE staff SET staff_code = ?, name = ?, role = ?, email = ?, phone = ?, shift = ?, join_date = ?, active = ? WHERE id = ?',
-        code, s.name, s.role, s.email, s.phone, s.shift, s.joinDate, s.active ? 1 : 0, existing.id);
-      return this.#staffRow('s.id = ?', existing.id)[0];
-    });
+      ) ORDER BY date DESC, seq DESC LIMIT ?`, limit);
+    return rows;
   }
 
   /** Test/diagnostic helper: true when every book satisfies the copy accounting invariant. */
@@ -849,13 +758,3 @@ const MEMBER_SELECT = `
          (SELECT COALESCE(SUM(fine), 0) FROM issues i WHERE i.member_id = m.id AND i.fine > 0 AND i.fine_paid = 0) AS unpaid_fines,
          (SELECT COUNT(*) FROM reservations r WHERE r.member_id = m.id AND r.status IN ('waiting','ready')) AS open_reservations
     FROM members m`;
-
-// Two parameters: today (issued today), today (returned today).
-const STAFF_SELECT = `
-  SELECT s.*,
-         (SELECT COUNT(*) FROM issues i WHERE i.issued_by = s.id) AS issued_total,
-         (SELECT COUNT(*) FROM issues i WHERE i.returned_by = s.id) AS returned_total,
-         (SELECT COALESCE(SUM(fine), 0) FROM issues i WHERE i.paid_by = s.id) AS fines_collected,
-         (SELECT COUNT(*) FROM issues i WHERE i.issued_by = s.id AND i.issued_on = ?) AS issued_today,
-         (SELECT COUNT(*) FROM issues i WHERE i.returned_by = s.id AND i.returned_on = ?) AS returned_today
-    FROM staff s`;

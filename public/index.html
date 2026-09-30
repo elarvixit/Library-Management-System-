@@ -31,8 +31,6 @@
       <div class="nav-group">Catalog</div>
       <a href="#/books" class="nav-item" data-view="books"><span data-icon="book"></span>Books</a>
       <a href="#/members" class="nav-item" data-view="members"><span data-icon="users"></span>Members</a>
-      <div class="nav-group">Administration</div>
-      <a href="#/staff" class="nav-item" data-view="staff"><span data-icon="idCard"></span>Library Staff</a>
     </nav>
     <div class="sidebar-foot">
       <div class="rules-card">
@@ -58,13 +56,7 @@
           <button class="icon-btn" id="bell-btn" type="button" aria-label="Notifications" aria-haspopup="true"><span data-icon="bell"></span><span class="bell-dot" id="bell-dot" hidden></span></button>
           <div class="popover" id="bell-pop" hidden></div>
         </div>
-        <div class="me-wrap">
-          <button class="me" id="me-btn" type="button" aria-haspopup="true" title="Staff on duty — click to switch">
-            <span class="me-avatar" id="me-avatar">EL</span>
-            <span class="me-text"><b id="me-name">Elarvix</b><small><span id="me-role">Admin</span> · <span id="today-label">—</span></small></span>
-          </button>
-          <div class="popover" id="me-pop" hidden></div>
-        </div>
+        <div class="me" title="Elarvix · Admin"><span class="me-avatar">EL</span><span class="me-text"><b>Elarvix</b><small>Admin · <span id="today-label">—</span></small></span></div>
       </div>
     </header>
 
@@ -181,9 +173,6 @@
       <!-- FINES -->
       <section class="view" id="view-fines"></section>
 
-      <!-- LIBRARY STAFF -->
-      <section class="view" id="view-staff"></section>
-
       <!-- BOOKS -->
       <section class="view" id="view-books">
         <div class="card">
@@ -284,6 +273,5 @@
 <div id="print-area" aria-hidden="true"></div>
 <script src="app.js"></script>
 <script src="assistant.js"></script>
-<script src="staff.js"></script>
 </body>
 </html>

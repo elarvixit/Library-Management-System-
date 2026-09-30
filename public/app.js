@@ -102,42 +102,28 @@ const skeleton = (h = 200) => `<div class="card-body"><div class="skeleton" styl
 // ===================================================================== state & API
 let RULES = { LOAN_DAYS: 14, MAX_ACTIVE_ISSUES: 3, FINE_PER_DAY: 5, HOLD_DAYS: 2, MAX_RENEWALS: 2, DUE_SOON_DAYS: 3 };
 let TODAY = localToday();
-const state = { members: [], books: [], reservations: [], loans: [], staff: [], dash: null, stats: null };
+const state = { members: [], books: [], reservations: [], loans: [], dash: null, stats: null };
 const ui = {
   view: 'dashboard', circTab: 'issue', loanFilter: 'active', attn: 'overdue', resFilter: 'open', fineFilter: 'unpaid', actFilter: 'all',
   bookField: 'all', bookView: 'table', bookPage: 1, memberFilter: 'all', memberPage: 1,
 };
 try { ui.bookView = localStorage.getItem('lib-book-view') || 'table'; } catch { /* storage unavailable */ }
-// Staff member on duty at the desk: sent with every request and recorded on issues, returns, fines, reservations.
-ui.staffId = null;
-try { ui.staffId = Number(localStorage.getItem('lib-staff')) || null; } catch { /* storage unavailable */ }
-const onDuty = () => state.staff.find((s) => s.id === ui.staffId) || null;
-const staffName = () => onDuty()?.name || 'Librarian';
 const PAGE_SIZE = 10;
 
 async function api(method, url, body) {
-  const headers = body ? { 'Content-Type': 'application/json' } : {};
-  if (ui.staffId) headers['X-Staff-Id'] = String(ui.staffId);
-  const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const res = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
 
 async function refreshAll() {
-  const [dash, stats, members, books, reservations, loans, staff] = await Promise.all([
+  const [dash, stats, members, books, reservations, loans] = await Promise.all([
     // Stats are optional: an older server without /api/stats still gets a working app.
     api('GET', '/api/dashboard'), api('GET', '/api/stats').catch(() => null), api('GET', '/api/members'), api('GET', '/api/books'),
     api('GET', '/api/reservations?status=open'), api('GET', '/api/issues?status=active'),
-    api('GET', '/api/staff').catch(() => []),
   ]);
-  Object.assign(state, { dash, stats, members, books, reservations, loans, staff });
-  // keep a valid, active staff member on duty (default: the first active Admin)
-  if (!onDuty()?.active) {
-    const pick = staff.find((s) => s.active && s.role === 'Admin') || staff.find((s) => s.active);
-    ui.staffId = pick?.id ?? null;
-  }
-  window.renderOnDuty?.();
+  Object.assign(state, { dash, stats, members, books, reservations, loans });
   RULES = dash.rules; TODAY = dash.today;
   $('#today-label').textContent = asDate(TODAY).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
   setBadge('#nb-overdue', dash.stats.overdue);
@@ -246,14 +232,14 @@ function loanSlip(r) {
   return `<div class="p-doc"><h1>Library Desk</h1><div class="p-sub">Loan slip · #${r.id}</div>
     ${pRow('Member', `${r.member_name} (${r.member_code})`)}${pRow('Book', r.title)}${pRow('ISBN', r.isbn)}
     ${pRow('Issued on', fmtDate(r.issued_on))}<div class="p-total"><span>Due back</span><span>${fmtDate(r.due_on)}</span></div>
-    ${pRow('Issued by', r.issued_by_name || staffName())}<div class="p-foot">Late returns are charged ₹${RULES.FINE_PER_DAY} per day. Thank you for reading!</div></div>`;
+    ${pRow('Issued by', LIBRARIAN)}<div class="p-foot">Late returns are charged ₹${RULES.FINE_PER_DAY} per day. Thank you for reading!</div></div>`;
 }
 function returnReceipt(r) {
   return `<div class="p-doc"><h1>Library Desk</h1><div class="p-sub">Return receipt · #${r.id}</div>
     ${pRow('Member', `${r.member_name} (${r.member_code})`)}${pRow('Book', r.title)}${pRow('Issued on', fmtDate(r.issued_on))}
     ${pRow('Due on', fmtDate(r.due_on))}${pRow('Returned on', fmtDate(r.returned_on))}${pRow('Days late', r.daysLate)}
     <div class="p-total"><span>Fine</span><span>${rupees(r.fine)}${r.fine ? ' (unpaid)' : ''}</span></div>
-    ${pRow('Received by', r.returned_by_name || staffName())}<div class="p-foot">Fines must be paid before new books can be issued.</div></div>`;
+    ${pRow('Received by', LIBRARIAN)}<div class="p-foot">Fines must be paid before new books can be issued.</div></div>`;
 }
 function memberCard(m) {
   return `<div class="p-card"><div class="p-brand">LIBRARY DESK · MEMBER</div><div><div class="p-name">${esc(m.name)}</div>
@@ -353,9 +339,10 @@ const PAGES = {
   books: { title: 'Books', sub: () => `${plural(state.dash?.stats.titles ?? 0, 'title')} · ${plural(state.dash?.stats.copies ?? 0, 'copy', 'copies')} · ${state.dash?.stats.available ?? 0} on the shelf` },
   members: { title: 'Members', sub: () => `${state.dash?.stats.active_members ?? 0} active of ${plural(state.members.length, 'member')}` },
 };
+const LIBRARIAN = 'Elarvix';
 function greeting() {
   const h = new Date().getHours();
-  return `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}, ${staffName().split(' ')[0]}.`;
+  return `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}, ${LIBRARIAN.split(' ')[0]}.`;
 }
 const actBtn = (act, ic, label, cls = '', extra = '') => `<button class="btn ${cls}" data-act="${act}" ${extra}>${icon(ic)}${label}</button>`;
 const linkBtn = (href, ic, label) => `<a class="btn" href="${href}" download>${icon(ic)}${label}</a>`;
@@ -369,7 +356,6 @@ function pageActions(view) {
     fines: linkBtn('/api/reports/fines.csv', 'download', 'Export CSV'),
     books: `${linkBtn('/api/reports/books-template.csv', 'file', 'Template')}${actBtn('import', 'upload', 'Import CSV')}${linkBtn('/api/reports/books.csv', 'download', 'Export')}${actBtn('add-book', 'plus', 'Add book', 'primary')}`,
     members: `${linkBtn('/api/reports/members.csv', 'download', 'Export')}${actBtn('add-member', 'userPlus', 'Add member', 'primary')}`,
-    staff: actBtn('add-staff', 'userPlus', 'Add staff', 'primary'),
   }[view];
 }
 
@@ -563,8 +549,7 @@ const FEED = {
 };
 function feedItem(e) {
   const [ic, tone, text] = FEED[e.type] || FEED.issued;
-  const by = e.staff_name ? ` <span class="by">· by ${esc(e.staff_name)}</span>` : '';
-  return `<li><span class="f-ico ${tone || 'tone-indigo'}" data-icon="${ic}">${icon(ic)}</span><div class="f-body">${text(e)}${by}</div><span class="f-time">${cap(relDays(e.date))}</span></li>`;
+  return `<li><span class="f-ico ${tone || 'tone-indigo'}" data-icon="${ic}">${icon(ic)}</span><div class="f-body">${text(e)}</div><span class="f-time">${cap(relDays(e.date))}</span></li>`;
 }
 
 // Grouped bar chart (issued vs returned). Hand-built SVG, validated palette slots 1–2,
@@ -794,7 +779,7 @@ renderers.returns = async () => {
   $('#loans-table').innerHTML = table([
     { label: 'Book', render: (r) => bookWho(r.title, `<span class="mono">${hl(r.isbn, q)}</span>`, q) },
     { label: 'Member', render: (r) => who(r.member_name, hl(r.member_code, q), q) },
-    { label: 'Issued', render: (r) => `${fmtDate(r.issued_on)}${r.issued_by_name ? `<div class="sub">by ${esc(r.issued_by_name)}</div>` : ''}` },
+    { label: 'Issued', render: (r) => fmtDate(r.issued_on) },
     { label: 'Due', render: (r) => `${fmtDate(r.due_on)}<div class="sub">${r.returned_on ? '' : relDays(r.due_on)}${r.renewals ? ` · renewed ${r.renewals}×` : ''}</div>` },
     { label: 'Status', render: (r) => (r.returned_on ? badge(`Returned ${fmtShort(r.returned_on)}`)
       : r.overdue ? badge(`${plural(r.days_overdue, 'day')} overdue`, 'red', true)
@@ -1408,10 +1393,7 @@ document.addEventListener('click', (e) => {
   const row = e.target.closest('[data-row]');
   if (row && !e.target.closest('button, a, input')) {
     const rid = Number(row.dataset.id);
-    const kind = row.dataset.row;
-    if (kind === 'book') openDrawer(() => bookDrawer(rid));
-    else if (kind === 'member') openDrawer(() => memberDrawer(rid));
-    else if (kind === 'staff' && window.staffDrawer) openDrawer(() => window.staffDrawer(rid));
+    openDrawer(() => (row.dataset.row === 'book' ? bookDrawer(rid) : memberDrawer(rid)));
   }
   // close the notifications popover when clicking elsewhere
   if (!e.target.closest('.bell-wrap')) $('#bell-pop').hidden = true;

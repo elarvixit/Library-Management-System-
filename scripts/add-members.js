@@ -5,7 +5,6 @@
 //   npm run add-samples -- http://localhost:3001
 import fs from 'node:fs';
 import { SAMPLE_MEMBERS, emailFor } from './sample-members.js';
-import { SAMPLE_STAFF } from '../src/sample-data.js';
 
 const base = (process.argv[2] || process.env.LIBRARY_URL || 'http://localhost:3000').replace(/\/$/, '');
 const pad = (n) => String(n).padStart(2, '0');
@@ -33,23 +32,6 @@ for (const [name, phone, joined, active] of SAMPLE_MEMBERS) {
   added++;
 }
 console.log(`Added ${added} member(s); ${SAMPLE_MEMBERS.length - added} already existed or were skipped.`);
-
-// Sample staff (skipped if a staff member with the same name exists; needs a server with /api/staff).
-const staffRes = await fetch(`${base}/api/staff`);
-if (staffRes.ok) {
-  const have = new Set((await staffRes.json()).map((s) => s.name.toLowerCase()));
-  let addedStaff = 0;
-  for (const [name, role, shift, email, phone, joined, active] of SAMPLE_STAFF) {
-    if (have.has(name.toLowerCase())) continue;
-    const r = await fetch(`${base}/api/staff`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, role, shift, email, phone, join_date: daysAgo(joined), active }),
-    });
-    const body = await r.json();
-    if (r.ok) { console.log(`  + ${body.staff_code}  ${name} (${role})`); addedStaff++; } else console.warn(`  skipped ${name}: ${body.error}`);
-  }
-  console.log(`Added ${addedStaff} staff member(s).`);
-} else console.warn('This server has no /api/staff yet — restart it with the latest code to add staff.');
 
 // Sample books: the server's CSV import skips any ISBN that is already in the catalogue.
 const csv = fs.readFileSync(new URL('../sample-data/books.csv', import.meta.url), 'utf8');

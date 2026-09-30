@@ -36,20 +36,6 @@ select b.title, i.issued_on, i.due_on,
   from issues i join books b on b.id = i.book_id join members m on m.id = i.member_id
  where m.member_code = 'M0001' and i.returned_on is null;
 
--- ---------------------------------------------------------------- staff
--- all staff with what they did (totals and today)
-select staff_code, name, role, shift, email, phone, active, issued_total, returned_total, fines_collected, issued_today, returned_today
-  from v_staff order by case role when 'Admin' then 0 when 'Librarian' then 1 else 2 end, name;
-
--- admins
-select staff_code, name, email, phone from staff where role = 'Admin' and active;
-
--- who issued / received each loan
-select b.title, m.name as member, si.name as issued_by, sr.name as returned_by, sp.name as fine_collected_by
-  from issues i join books b on b.id = i.book_id join members m on m.id = i.member_id
-  left join staff si on si.id = i.issued_by left join staff sr on sr.id = i.returned_by left join staff sp on sp.id = i.paid_by
- order by i.id desc limit 20;
-
 -- ---------------------------------------------------------------- loans
 -- due in the next 3 days
 select b.title, m.name, m.phone, i.due_on
@@ -103,12 +89,6 @@ select title, total_copies, available_copies, issued_copies, held_copies, queue_
 
 -- Delete a book (refused while on loan or reserved; soft delete keeps history)
 -- select * from delete_book((select id from books where title = 'Cosmos'));
-
--- Record the staff member on duty: pass their id as the last argument, e.g.
--- select * from issue_book((select id from members where member_code = 'M0010'), (select id from books where title = 'Wonder'), null, current_date, (select id from staff where staff_code = 'S002'));
-
--- Add staff
--- insert into staff (staff_code, name, role, shift, email, phone) values ('S007', 'New Staff', 'Assistant', 'Morning', 'new.staff@library.example', '9800000000');
 
 -- Add a book / member (plain inserts are fine for these)
 -- insert into books (title, author, isbn, category, total_copies, available_copies) values ('New Book', 'Some Author', '9780000000001', 'General', 2, 2);

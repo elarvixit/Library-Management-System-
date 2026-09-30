@@ -5,7 +5,6 @@
 -- =====================================================================
 
 drop table if exists reservations cascade;
-drop table if exists staff cascade;
 drop table if exists issues cascade;
 drop table if exists members cascade;
 drop table if exists books cascade;
@@ -48,34 +47,6 @@ create table members (
 create index ix_members_name on members (lower(name));
 
 -- ---------------------------------------------------------------------
--- staff: who works at the library. Every issue, return, fine collection and
--- reservation records the staff member on duty who performed it.
--- ---------------------------------------------------------------------
-create table staff (
-  id         bigint generated always as identity primary key,
-  staff_code text    not null unique,                     -- e.g. S001
-  name       text    not null check (length(trim(name)) > 0),
-  role       text    not null default 'Librarian' check (role in ('Admin', 'Librarian', 'Assistant')),
-  email      text    not null default '' check (email = '' or email ~* '^[^\s@]+@[^\s@]+\.[^\s@]+$'),
-  phone      text    not null default '',
-  shift      text    not null default 'Full day' check (shift in ('Morning', 'Evening', 'Full day')),
-  join_date  date    not null default current_date,
-  active     boolean not null default true
-);
-insert into staff (staff_code, name, role, shift) values ('S001', 'Elarvix', 'Admin', 'Full day');
-
--- The library must always keep at least one active Admin.
-create or replace function _keep_one_admin() returns trigger language plpgsql as $$
-begin
-  if not exists (select 1 from staff where role = 'Admin' and active) then
-    raise exception 'The library must keep at least one active Admin. Make another staff member an Admin first.';
-  end if;
-  return null;
-end $$;
-create constraint trigger trg_keep_one_admin after update or delete on staff
-  deferrable initially deferred for each row execute function _keep_one_admin();
-
--- ---------------------------------------------------------------------
 -- issues (loans)
 -- fine is set when the book is returned: ₹5 × days late. fine_paid clears it.
 -- ---------------------------------------------------------------------
@@ -90,9 +61,6 @@ create table issues (
   fine_paid   boolean not null default false,
   paid_on     date,
   renewals    integer not null default 0 check (renewals between 0 and 2),
-  issued_by   bigint references staff (id),   -- staff on duty who issued the book
-  returned_by bigint references staff (id),   -- ... who received the return
-  paid_by     bigint references staff (id),   -- ... who collected the fine
   check (due_on >= issued_on),
   check (returned_on is null or returned_on >= issued_on)
 );
@@ -121,7 +89,6 @@ create table reservations (
   ready_on    date,
   hold_until  date,
   closed_on   date,
-  created_by  bigint references staff (id),   -- staff on duty who placed the reservation
   check (status <> 'ready' or hold_until is not null)
 );
 create index ix_res_book on reservations (book_id, status);
@@ -138,4 +105,3 @@ alter table books        enable row level security;
 alter table members      enable row level security;
 alter table issues       enable row level security;
 alter table reservations enable row level security;
-alter table staff        enable row level security;

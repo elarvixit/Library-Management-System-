@@ -105,40 +105,31 @@ insert into members (member_code, name, phone, email, join_date, active) values
   ('M0059', 'Vivek Chandra', '9839299900', 'vivek.chandra@example.com', current_date - 10, true),
   ('M0060', 'Nisha Fernandes', '9820300011', 'nisha.fernandes@example.com', current_date - 3, true);
 
--- Staff (S001 Elarvix, Admin, is created by schema.sql)
-insert into staff (staff_code, name, role, shift, email, phone, join_date, active) values
-  ('S002', 'Kavitha Rao', 'Librarian', 'Morning', 'kavitha.rao@library.example', '9845100001', current_date - 900, true),
-  ('S003', 'Rakesh Menon', 'Librarian', 'Evening', 'rakesh.menon@library.example', '9845100002', current_date - 640, true),
-  ('S004', 'Anita Desai', 'Assistant', 'Morning', 'anita.desai@library.example', '9845100003', current_date - 300, true),
-  ('S005', 'Sameer Khan', 'Assistant', 'Evening', 'sameer.khan@library.example', '9845100004', current_date - 120, true),
-  ('S006', 'Lalitha Iyer', 'Assistant', 'Full day', 'lalitha.iyer@library.example', '9845100005', current_date - 1200, false);
-
 -- Loans. Helper: look books up by ISBN and members by member_code.
-insert into issues (book_id, member_id, issued_on, due_on, returned_on, fine, fine_paid, issued_by, returned_by)
-select b.id, m.id, x.issued_on, x.due_on, x.returned_on, x.fine, false,
-       (select id from staff where staff_code = x.issued_by), (select id from staff where staff_code = x.returned_by)
+insert into issues (book_id, member_id, issued_on, due_on, returned_on, fine, fine_paid)
+select b.id, m.id, x.issued_on, x.due_on, x.returned_on, x.fine, false
 from (values
   -- Asha: Dune and The Hobbit, 30 days ago -> 16 days overdue
-  ('9780441013593', 'M0001', current_date - 30, current_date - 16, null::date, 0, 'S002', null),
-  ('9780261102217', 'M0001', current_date - 30, current_date - 16, null::date, 0, 'S002', null),
+  ('9780441013593', 'M0001', current_date - 30, current_date - 16, null::date, 0),
+  ('9780261102217', 'M0001', current_date - 30, current_date - 16, null::date, 0),
   -- Ravi: Clean Code returned 4 days late -> ₹20 unpaid fine
-  ('9780132350884', 'M0002', current_date - 30, current_date - 16, current_date - 12, 20, 'S002', 'S003'),
+  ('9780132350884', 'M0002', current_date - 30, current_date - 16, current_date - 12, 20),
   -- Meera: the only copy of The Pragmatic Programmer (Arjun and Fatima are queued for it)
-  ('9780135957059', 'M0003', current_date - 10, current_date + 4, null::date, 0, 'S003', null),
+  ('9780135957059', 'M0003', current_date - 10, current_date + 4, null::date, 0),
   -- Fatima: Atomic Habits, returned yesterday -> held for Meera
-  ('9781847941831', 'M0005', current_date - 10, current_date + 4, current_date - 1, 0, 'S003', 'S002'),
+  ('9781847941831', 'M0005', current_date - 10, current_date + 4, current_date - 1, 0),
   -- Issued today
-  ('9780099590088', 'M0004', current_date, current_date + 14, null::date, 0, 'S001', null),
-  ('9780132350884', 'M0007', current_date, current_date + 14, null::date, 0, 'S002', null),
-  ('9788173711466', 'M0008', current_date, current_date + 14, null::date, 0, 'S004', null),
-  ('9780006550686', 'M0009', current_date, current_date + 14, null::date, 0, 'S001', null)
-) as x(isbn, code, issued_on, due_on, returned_on, fine, issued_by, returned_by)
+  ('9780099590088', 'M0004', current_date, current_date + 14, null::date, 0),
+  ('9780132350884', 'M0007', current_date, current_date + 14, null::date, 0),
+  ('9788173711466', 'M0008', current_date, current_date + 14, null::date, 0),
+  ('9780006550686', 'M0009', current_date, current_date + 14, null::date, 0)
+) as x(isbn, code, issued_on, due_on, returned_on, fine)
 join books b on b.isbn = x.isbn
 join members m on m.member_code = x.code;
 
 -- Reservations (queue order = insertion order)
-insert into reservations (book_id, member_id, reserved_on, status, ready_on, hold_until, created_by)
-select b.id, m.id, x.reserved_on, x.status, x.ready_on, x.hold_until, (select id from staff where staff_code = 'S004')
+insert into reservations (book_id, member_id, reserved_on, status, ready_on, hold_until)
+select b.id, m.id, x.reserved_on, x.status, x.ready_on, x.hold_until
 from (values
   (1, '9780135957059', 'M0004', current_date - 10, 'waiting', null::date, null::date),  -- Arjun, #1
   (2, '9780135957059', 'M0005', current_date - 10, 'waiting', null::date, null::date),  -- Fatima, #2

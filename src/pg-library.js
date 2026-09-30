@@ -7,7 +7,7 @@
 import pg from 'pg';
 import {
   RULES, LibraryError, addDays, daysBetween, computeFine, parseDate, requiredText, optionalText,
-  positiveInt, normalizeIsbn, validEmail, validPhone, bool, STAFF_ROLES, STAFF_SHIFTS,
+  positiveInt, normalizeIsbn, validEmail, validPhone, bool,
 } from './library.js';
 
 // Return DATE columns as 'YYYY-MM-DD' strings and counts/sums as numbers (not strings).
@@ -24,8 +24,6 @@ const id = (value, what) => {
   return n;
 };
 const esc = (s) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
-// Staff on duty for an action (header X-Staff-Id); null when not supplied.
-const staffArg = (v) => (v === undefined || v === null || v === '' ? null : id(v, 'staff member'));
 // SQLite returned 0/1 for flags; keep that shape for the frontend.
 const flags = (r) => {
   if (!r) return r;
@@ -124,10 +122,8 @@ export class PgLibrary {
   // ---------------------------------------------------------------- shared row builders
   async #issueRows(t, where, params = []) {
     const rows = await t.q(
-      `select i.*, b.title, b.author, b.isbn, m.name as member_name, m.member_code, m.phone, m.email,
-              s1.name as issued_by_name, s2.name as returned_by_name, s3.name as paid_by_name
+      `select i.*, b.title, b.author, b.isbn, m.name as member_name, m.member_code, m.phone, m.email
          from issues i join books b on b.id = i.book_id join members m on m.id = i.member_id
-         left join staff s1 on s1.id = i.issued_by left join staff s2 on s2.id = i.returned_by left join staff s3 on s3.id = i.paid_by
         where ${where} order by i.due_on, i.id`, params);
     return rows.map((r) => {
       if (r.returned_on) return { ...r, overdue: false, days_overdue: 0, accrued_fine: r.fine };
@@ -357,11 +353,11 @@ export class PgLibrary {
     });
   }
 
-  payFines(memberId, { staffId } = {}) {
+  payFines(memberId) {
     return this.tx(async (t) => {
       const member = await this.#member(t, memberId);
       if (!member.unpaid_fines) throw new LibraryError(`${member.name} has no unpaid fines.`);
-      const { paid } = await t.one('select pay_fines($1, $2) as paid', [member.id, staffArg(staffId)]);
+      const { paid } = await t.one('select pay_fines($1) as paid', [member.id]);
       return { paid, member: await this.#member(t, member.id) };
     });
   }
@@ -383,27 +379,27 @@ export class PgLibrary {
     });
   }
 
-  issueBook({ memberId, bookId, issuedOn, dueOn, staffId } = {}) {
+  issueBook({ memberId, bookId, issuedOn, dueOn } = {}) {
     return this.tx(async (t) => {
       const mid = id(memberId, 'member');
       const bid = id(bookId, 'book');
       const issueDate = issuedOn ? parseDate(issuedOn, 'Issue date') : t.today;
       const dueDate = dueOn ? parseDate(dueOn, 'Due date') : null;
       const ownHold = await t.one(`select 1 from reservations where book_id = $1 and member_id = $2 and status = 'ready'`, [bid, mid]);
-      const row = await t.one('select * from issue_book($1, $2, $3, $4, $5)', [mid, bid, dueDate, issueDate, staffArg(staffId)]);
+      const row = await t.one('select * from issue_book($1, $2, $3, $4)', [mid, bid, dueDate, issueDate]);
       const [full] = await this.#issueRows(t, 'i.id = $1', [row.id]);
       return { ...full, fromReservation: !!ownHold };
     });
   }
 
-  returnBook(issueId, { returnedOn, staffId } = {}) {
+  returnBook(issueId, { returnedOn } = {}) {
     return this.tx(async (t) => {
       const iid = id(issueId, 'issue');
       const issue = await t.one('select book_id from issues where id = $1', [iid]);
       if (!issue) throw notFound('Issue record');
       const date = returnedOn ? parseDate(returnedOn, 'Return date') : t.today;
       const before = await this.#readyIds(t, issue.book_id);
-      await t.q('select return_book($1, $2, $3)', [iid, date, staffArg(staffId)]);
+      await t.q('select return_book($1, $2)', [iid, date]);
       const [full] = await this.#issueRows(t, 'i.id = $1', [iid]);
       const promoted = await this.#promotedSince(t, issue.book_id, before);
       return { ...full, daysLate: Math.max(0, daysBetween(full.due_on, full.returned_on)), fine: full.fine, readyFor: promoted[0] ?? null };
@@ -422,9 +418,9 @@ export class PgLibrary {
   }
 
   // ---------------------------------------------------------------- reservations
-  reserveBook({ memberId, bookId, staffId } = {}) {
+  reserveBook({ memberId, bookId } = {}) {
     return this.tx(async (t) => {
-      const r = await t.one('select * from reserve_book($1, $2, $3)', [id(memberId, 'member'), id(bookId, 'book'), staffArg(staffId)]);
+      const r = await t.one('select * from reserve_book($1, $2)', [id(memberId, 'member'), id(bookId, 'book')]);
       return (await this.#reservationRows(t, 'r.id = $1', [r.id]))[0];
     });
   }
@@ -450,73 +446,6 @@ export class PgLibrary {
       }[status];
       if (!where) throw new LibraryError('Status must be one of: open, waiting, ready, closed, all.');
       return this.#reservationRows(t, where);
-    });
-  }
-
-  // ---------------------------------------------------------------- staff
-  #staffInput(input, today, { checkJoinDate = true } = {}) {
-    const role = String(input.role ?? 'Librarian').trim();
-    if (!STAFF_ROLES.includes(role)) throw new LibraryError(`Role must be one of: ${STAFF_ROLES.join(', ')}.`);
-    const shift = String(input.shift ?? 'Full day').trim();
-    if (!STAFF_SHIFTS.includes(shift)) throw new LibraryError(`Shift must be one of: ${STAFF_SHIFTS.join(', ')}.`);
-    const joinDate = input.join_date ? parseDate(String(input.join_date).slice(0, 10), 'Join date') : today;
-    if (checkJoinDate && joinDate > today) throw new LibraryError('Join date cannot be in the future.');
-    return {
-      name: requiredText(input.name, 'Name', 120),
-      code: optionalText(input.staff_code ?? input.staffCode, 20).toUpperCase(),
-      role, shift, joinDate,
-      email: validEmail(input.email),
-      phone: validPhone(input.phone),
-      active: input.active === undefined ? true : bool(input.active),
-    };
-  }
-  #staffRows(t, where, params = []) {
-    return t.q(`select * from v_staff s where ${where}
-      order by case s.role when 'Admin' then 0 when 'Librarian' then 1 else 2 end, lower(s.name)`, params);
-  }
-
-  listStaff() { return this.tx((t) => this.#staffRows(t, 'true')); }
-
-  getStaff(staffId) {
-    return this.tx(async (t) => {
-      const [s] = await this.#staffRows(t, 's.id = $1', [id(staffId, 'staff member')]);
-      if (!s) throw notFound('Staff member');
-      const recent = (await this.#recent(t, 200)).filter((e) => e.staff_id === s.id).slice(0, 25);
-      return { staff: s, recent };
-    });
-  }
-
-  addStaff(input) {
-    return this.tx(async (t) => {
-      const s = this.#staffInput(input, t.today);
-      let code = s.code;
-      if (!code) {
-        const { n } = await t.one(`select coalesce(max(substring(staff_code from 2)::int), 0) + 1 as n from staff where staff_code ~ '^S[0-9]+$'`);
-        code = `S${String(n).padStart(3, '0')}`;
-      }
-      if (await t.one('select 1 from staff where staff_code = $1', [code])) throw conflict(`Staff ID ${code} is already in use.`);
-      const { id: newId } = await t.one(
-        'insert into staff (staff_code, name, role, email, phone, shift, join_date, active) values ($1,$2,$3,$4,$5,$6,$7,$8) returning id',
-        [code, s.name, s.role, s.email, s.phone, s.shift, s.joinDate, s.active]);
-      return (await this.#staffRows(t, 's.id = $1', [newId]))[0];
-    });
-  }
-
-  updateStaff(staffId, input) {
-    return this.tx(async (t) => {
-      const existing = await t.one('select * from staff where id = $1', [id(staffId, 'staff member')]);
-      if (!existing) throw notFound('Staff member');
-      const s = this.#staffInput({ ...existing, active: !!existing.active, ...input }, t.today,
-        { checkJoinDate: input.join_date !== undefined && input.join_date !== existing.join_date });
-      const code = s.code || existing.staff_code;
-      if (await t.one('select 1 from staff where staff_code = $1 and id <> $2', [code, existing.id])) throw conflict(`Staff ID ${code} is already in use.`);
-      if (existing.role === 'Admin' && existing.active && (s.role !== 'Admin' || !s.active)) {
-        const { n } = await t.one(`select count(*) as n from staff where role = 'Admin' and active and id <> $1`, [existing.id]);
-        if (!n) throw conflict('The library must keep at least one active Admin. Make another staff member an Admin first.');
-      }
-      await t.q('update staff set staff_code=$1, name=$2, role=$3, email=$4, phone=$5, shift=$6, join_date=$7, active=$8 where id=$9',
-        [code, s.name, s.role, s.email, s.phone, s.shift, s.joinDate, s.active, existing.id]);
-      return (await this.#staffRows(t, 's.id = $1', [existing.id]))[0];
     });
   }
 
@@ -603,28 +532,25 @@ export class PgLibrary {
 
   #recent(t, limit) {
     return t.q(`
-      select e.*, s.name as staff_name, s.role as staff_role from (
-        select 'issued' as type, i.issued_on::text as date, i.id as seq, b.title, m.name as member_name, null::int as amount, i.issued_by as staff_id
+      select * from (
+        select 'issued' as type, i.issued_on::text as date, i.id as seq, b.title, m.name as member_name, null::int as amount
           from issues i join books b on b.id = i.book_id join members m on m.id = i.member_id
         union all
-        select 'returned', i.returned_on::text, i.id, b.title, m.name, i.fine, i.returned_by
+        select 'returned', i.returned_on::text, i.id, b.title, m.name, i.fine
           from issues i join books b on b.id = i.book_id join members m on m.id = i.member_id where i.returned_on is not null
         union all
-        select 'fine_paid', i.paid_on::text, i.id, b.title, m.name, i.fine, i.paid_by
+        select 'fine_paid', i.paid_on::text, i.id, b.title, m.name, i.fine
           from issues i join books b on b.id = i.book_id join members m on m.id = i.member_id where i.paid_on is not null
         union all
-        select 'reserved', r.reserved_on::text, r.id, b.title, m.name, null, r.created_by
+        select 'reserved', r.reserved_on::text, r.id, b.title, m.name, null
           from reservations r join books b on b.id = r.book_id join members m on m.id = r.member_id
         union all
-        select 'ready', r.ready_on::text, r.id, b.title, m.name, null, null
+        select 'ready', r.ready_on::text, r.id, b.title, m.name, null
           from reservations r join books b on b.id = r.book_id join members m on m.id = r.member_id where r.ready_on is not null
         union all
-        select r.status, r.closed_on::text, r.id, b.title, m.name, null, null
+        select r.status, r.closed_on::text, r.id, b.title, m.name, null
           from reservations r join books b on b.id = r.book_id join members m on m.id = r.member_id
          where r.closed_on is not null and r.status in ('expired', 'cancelled')
-      ) e left join staff s on s.id = e.staff_id
-      order by e.date desc,
-               case e.type when 'fine_paid' then 3 when 'returned' then 2 when 'expired' then 2 when 'cancelled' then 2 when 'ready' then 2 else 1 end desc,
-               e.seq desc limit $1`, [limit]);
+      ) e order by date desc, seq desc limit $1`, [limit]);
   }
 }
