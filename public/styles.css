@@ -833,6 +833,93 @@ dialog::backdrop { background: rgba(16, 24, 40, .5); backdrop-filter: blur(3px);
 @media (max-width: 640px) { .spark { width: 56px; } .kpi2 { padding: 14px; } .kpi2-val { font-size: 26px; } }
 @media (max-width: 640px) { .tl { padding: 4px 12px 8px; } .tl-actions { display: none; } .act-stat b { font-size: 20px; } }
 
+
+/* =====================================================================
+   Modules: catalogue details, scanning, acquisitions, digital library, reports
+   ===================================================================== */
+.row3 { display: grid; grid-template-columns: 1.4fr .8fr .8fr; gap: 14px; }
+@media (max-width: 560px) { .row3 { grid-template-columns: 1fr; } }
+
+/* barcode / RFID scan bar */
+.scan-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; border-style: dashed; border-color: color-mix(in srgb, var(--primary) 35%, var(--line)); }
+.scan-ico { width: 44px; height: 44px; border-radius: 12px; background: var(--primary-soft); color: var(--primary); flex: none; }
+.scan-ico svg { width: 22px; height: 22px; }
+.scan-text { flex: 1 1 260px; min-width: 0; }
+.scan-text b { display: block; font-size: 14.5px; }
+.scan-text small { color: var(--muted); font-size: 12.5px; }
+.scan-input { flex: 0 1 280px; font-family: var(--mono); letter-spacing: .03em; }
+.scan-input.scan-ok { animation: scanok .9s ease; }
+.scan-input.scan-bad { animation: scanbad .9s ease; }
+@keyframes scanok { 0% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--green-solid) 45%, transparent); border-color: var(--green-solid); } }
+@keyframes scanbad { 0% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--red-solid) 45%, transparent); border-color: var(--red-solid); } }
+.scan-status { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
+.scan-status span { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; background: var(--surface-3); color: var(--muted); font-size: 12.5px; }
+.scan-status span svg { width: 14px; height: 14px; }
+.scan-status span.done { background: var(--green-bg); color: var(--green); }
+.label-preview { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px; border: 1px dashed var(--line-2); border-radius: 10px; background: #fff; }
+.label-preview .btn { margin-left: auto; }
+.barcode { max-width: 100%; height: auto; }
+
+/* acquisitions */
+.acq-flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--surface-2); font-size: 12.5px; color: var(--muted); }
+.acq-flow span { display: inline-flex; align-items: center; gap: 6px; }
+.acq-flow span.on { color: var(--primary); font-weight: 600; }
+.acq-flow svg { width: 14px; height: 14px; }
+
+/* digital library */
+.dig-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; padding: 20px; }
+.dig-card { display: flex; flex-direction: column; gap: 6px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); transition: box-shadow .15s, transform .15s, border-color .15s; }
+.dig-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); border-color: var(--line-2); }
+.dig-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.dig-top .kpi-ico { width: 40px; height: 40px; border-radius: 12px; }
+.dig-badges { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.dig-card h3 { font-size: 15px; font-weight: 600; line-height: 1.35; }
+.dig-desc { color: var(--text-2); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.9em; }
+.dig-meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: auto; padding-top: 6px; }
+.dig-actions { display: flex; gap: 6px; margin-top: 6px; }
+.dig-actions .btn.primary { flex: 1; }
+
+/* reports */
+.rep-layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 1000px) { .rep-layout { grid-template-columns: minmax(0, 1fr); } }
+.rep-list { padding: 8px; position: sticky; top: 84px; }
+@media (max-width: 1000px) { .rep-list { position: static; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); } }
+.rep-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: none; cursor: pointer; text-align: left; color: inherit; }
+.rep-item:hover { background: var(--surface-3); }
+.rep-item.on { background: var(--primary-soft); }
+.rep-item .kpi-ico { width: 34px; height: 34px; border-radius: 10px; }
+.rep-item b { display: block; font-size: 13.5px; font-weight: 600; }
+.rep-item small { color: var(--muted); font-size: 12px; }
+.rep-item.on b { color: var(--primary); }
+.rep-main > .card { margin-bottom: 16px; }
+.rep-head { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.rep-head .grow { flex: 1 1 260px; }
+.rep-head h2 { font-size: 18px; }
+.rep-range { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.rep-range .field input { width: 150px; }
+.rep-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.rep-summary .act-stat b { font-size: 20px; }
+
+/* print: book labels, library card barcode, reports */
+@media print {
+  .p-barcode { margin-top: 4px; }
+  .p-barcode svg { height: 44px; width: auto; }
+  .p-labels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .p-label { border: 1px dashed #999; padding: 8px 10px; text-align: center; break-inside: avoid; }
+  .p-label-t { font-weight: 700; font-size: 10pt; }
+  .p-label-a { font-size: 8.5pt; color: #333; margin-bottom: 4px; }
+  .p-label svg { width: 100%; height: auto; }
+  .p-report h1 { font-size: 16pt; margin: 0; }
+  .p-report .p-sub { font-size: 9.5pt; color: #444; margin: 2px 0 10px; }
+  .p-sum { display: flex; gap: 18px; margin-bottom: 10px; }
+  .p-sum div { display: grid; }
+  .p-sum b { font-size: 13pt; }
+  .p-sum span { font-size: 8.5pt; color: #444; }
+  .p-report table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  .p-report th, .p-report td { border: 1px solid #bbb; padding: 3px 6px; text-align: left; }
+  .p-report th { background: #eee; }
+}
+
 /* phone layout — kept last so it overrides the component rules above */
 @media (max-width: 640px) {
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

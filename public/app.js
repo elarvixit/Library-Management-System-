@@ -241,10 +241,16 @@ function returnReceipt(r) {
     <div class="p-total"><span>Fine</span><span>${rupees(r.fine)}${r.fine ? ' (unpaid)' : ''}</span></div>
     ${pRow('Received by', LIBRARIAN)}<div class="p-foot">Fines must be paid before new books can be issued.</div></div>`;
 }
+const memberExpired = (m) => !!(m && m.valid_until && m.valid_until < TODAY);
+function membershipBadge(m) {
+  if (!m.active) return badge('Inactive', '', true);
+  if (memberExpired(m)) return badge('Expired', 'red', true);
+  return badge('Active', 'green', true);
+}
 function memberCard(m) {
-  return `<div class="p-card"><div class="p-brand">LIBRARY DESK · MEMBER</div><div><div class="p-name">${esc(m.name)}</div>
-    <div class="p-meta">Member since ${fmtDate(m.join_date)}${m.phone ? ` · ${esc(m.phone)}` : ''}</div></div>
-    <div class="p-code">${esc(m.member_code)}</div></div>`;
+  return `<div class="p-card"><div class="p-brand">LIBRARY DESK · ${esc((m.membership_type || 'General').toUpperCase())} MEMBER</div><div><div class="p-name">${esc(m.name)}</div>
+    <div class="p-meta">Member since ${fmtDate(m.join_date)}${m.valid_until ? ` · valid until ${fmtDate(m.valid_until)}` : ''}${m.phone ? ` · ${esc(m.phone)}` : ''}</div></div>
+    <div class="p-barcode">${window.Barcode ? Barcode.code39(m.member_code, { height: 34 }) : ''}</div></div>`;
 }
 
 // ===================================================================== picker (search-as-you-type combobox)
@@ -356,6 +362,9 @@ function pageActions(view) {
     fines: linkBtn('/api/reports/fines.csv', 'download', 'Export CSV'),
     books: `${linkBtn('/api/reports/books-template.csv', 'file', 'Template')}${actBtn('import', 'upload', 'Import CSV')}${linkBtn('/api/reports/books.csv', 'download', 'Export')}${actBtn('add-book', 'plus', 'Add book', 'primary')}`,
     members: `${linkBtn('/api/reports/members.csv', 'download', 'Export')}${actBtn('add-member', 'userPlus', 'Add member', 'primary')}`,
+    acquisitions: actBtn('add-acq', 'plus', 'New purchase request', 'primary'),
+    digital: actBtn('add-digital', 'plus', 'Add digital resource', 'primary'),
+    reports: `${actBtn('print-report', 'printer', 'Print')}${actBtn('export-report', 'download', 'Export CSV', 'primary')}`,
   }[view];
 }
 
@@ -832,6 +841,7 @@ function updateIssuePanel() {
   if (!m) add('pending', 'Select a member');
   else {
     add(m.active ? 'ok' : 'bad', m.active ? 'Membership is active' : 'Member is inactive');
+    if (m.active && memberExpired(m)) add('bad', `Membership expired on ${fmtDate(m.valid_until)} — renew it first`, `<button type="button" class="btn xs" data-act="renew-membership" data-id="${m.id}">Renew</button>`);
     if (m.unpaid_fines) add('bad', `Unpaid fine of <b>${rupees(m.unpaid_fines)}</b> must be paid first`, `<button type="button" class="btn xs" data-act="pay" data-id="${m.id}">Collect</button>`);
     else add('ok', 'No unpaid fines');
     add(m.active_issues < RULES.MAX_ACTIVE_ISSUES ? 'ok' : 'bad', `Borrowing ${m.active_issues} of ${RULES.MAX_ACTIVE_ISSUES} allowed books`);
@@ -1171,7 +1181,7 @@ renderers.books = async () => {
   $('#books-body').innerHTML = table([
     { label: 'Title', render: (b) => bookWho(b.title, hl(b.author, q), q) },
     { label: 'ISBN', render: (b) => `<span class="mono">${hl(b.isbn, q.replace(/[\s-]/g, ''))}</span>` },
-    { label: 'Category', render: (b) => badge(hl(b.category, q)) },
+    { label: 'Category', render: (b) => `${badge(hl(b.category, q))}${b.shelf ? `<div class="sub">Shelf ${esc(b.shelf)}</div>` : ''}` },
     { label: 'Availability', render: (b) => availBar(b) },
     { label: 'Status', render: (b) => availBadge(b) },
     { label: '', cls: 'num', render: (b) => `<div class="row-actions">
@@ -1201,6 +1211,11 @@ function bookForm(b = {}) {
       <label class="field">Category <input name="category" list="cat-list" maxlength="80" placeholder="General" value="${esc(b.category)}"></label>
     </div>
     <datalist id="cat-list">${cats.map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
+    <div class="row3">
+      <label class="field">Publisher <input name="publisher" maxlength="120" value="${esc(b.publisher)}" placeholder="optional"></label>
+      <label class="field">Year <input name="year" type="number" min="1000" max="2100" step="1" value="${esc(b.year ?? '')}" placeholder="e.g. 2019"></label>
+      <label class="field">Shelf / rack <input name="shelf" maxlength="30" value="${esc(b.shelf)}" placeholder="e.g. A-3"></label>
+    </div>
     <label class="field">Total copies <input name="total_copies" type="number" min="${min}" step="1" required value="${esc(b.total_copies ?? 1)}">
       ${b.id ? `<small>${b.issued_copies} on loan and ${b.held_copies} held for pickup, so the minimum is ${min}. Available copies update automatically; extra copies go to the reservation queue first.</small>` : '<small>All copies start on the shelf.</small>'}</label>`;
 }
@@ -1297,8 +1312,12 @@ async function bookDrawer(bookId) {
       </div></div>
     <div class="d-body">
       <div class="d-sec"><h3>Details</h3><dl class="kv"><dt>ISBN</dt><dd class="mono">${esc(b.isbn)}</dd><dt>Category</dt><dd>${esc(b.category)}</dd>
+        ${b.publisher ? `<dt>Publisher</dt><dd>${esc(b.publisher)}${b.year ? `, ${b.year}` : ''}</dd>` : b.year ? `<dt>Year</dt><dd>${b.year}</dd>` : ''}
+        ${b.shelf ? `<dt>Shelf</dt><dd><span class="badge">${esc(b.shelf)}</span></dd>` : ''}
         <dt>Copies</dt><dd>${b.total_copies} total · ${b.available_copies} available · ${b.held_copies} held · ${b.issued_copies} on loan</dd>
         ${nextDue ? `<dt>Next due back</dt><dd>${fmtDate(nextDue)} (${relDays(nextDue)})</dd>` : ''}</dl></div>
+      <div class="d-sec"><h3>Barcode label</h3><div class="label-preview">${window.Barcode ? Barcode.ean13(b.isbn, { height: 46, module: 1.6 }) : ''}
+        <button class="btn sm" data-act="print-label" data-id="${b.id}">${icon('printer')}Print label</button></div></div>
       <div class="d-sec"><h3>On loan to ${badge(loans.length)}</h3>${loans.length ? `<div class="d-list">${loans.map((l) => `<div class="d-item">${avatar(l.member_name, 'sm')}<div class="grow"><b>${esc(l.member_name)}</b>
         <div class="sub">Due ${fmtDate(l.due_on)} · ${l.overdue ? `<span class="t-red">${plural(l.days_overdue, 'day')} overdue</span>` : relDays(l.due_on)}</div></div>${loanActions(l, true)}</div>`).join('')}</div>` : '<p class="muted small">Nobody has this book right now.</p>'}</div>
       <div class="d-sec"><h3>Reservation queue ${badge(res.length)}</h3>${res.length ? `<div class="queue">${res.map((r) => `<div class="q-row ${r.status === 'ready' ? 'ready' : ''}">
@@ -1316,7 +1335,7 @@ renderers.members = async () => {
   const ql = q.toLowerCase();
   const f = ui.memberFilter;
   const rows = state.members.filter((m) => (!q || memberText(m).toLowerCase().includes(ql))
-    && (f === 'all' || (f === 'active' && m.active) || (f === 'inactive' && !m.active) || (f === 'fines' && m.unpaid_fines > 0) || (f === 'borrowing' && m.active_issues > 0)));
+    && (f === 'all' || (f === 'active' && m.active && !memberExpired(m)) || (f === 'inactive' && !m.active) || (f === 'expired' && m.active && memberExpired(m)) || (f === 'fines' && m.unpaid_fines > 0) || (f === 'borrowing' && m.active_issues > 0)));
   const sorters = {
     name: (a, b) => a.name.localeCompare(b.name),
     recent: (a, b) => b.join_date.localeCompare(a.join_date) || b.id - a.id,
@@ -1330,7 +1349,7 @@ renderers.members = async () => {
     { label: 'Member', render: (m) => who(m.name, `<span class="mono">${hl(m.member_code, q)}</span>`, q) },
     { label: 'Contact', render: (m) => `${m.phone ? hl(m.phone, q) : '<span class="muted">—</span>'}<div class="sub">${hl(m.email, q)}</div>` },
     { label: 'Member since', render: (m) => fmtDate(m.join_date) },
-    { label: 'Status', render: (m) => (m.active ? badge('Active', 'green', true) : badge('Inactive', '', true)) },
+    { label: 'Status', render: (m) => `${membershipBadge(m)}<div class="sub">${esc(m.membership_type || 'General')}${m.valid_until ? ` · until ${fmtShort(m.valid_until)}` : ''}</div>` },
     { label: 'Books', render: (m) => `${dots(m.active_issues, RULES.MAX_ACTIVE_ISSUES)}<span class="muted small">${m.active_issues}/${RULES.MAX_ACTIVE_ISSUES}</span>` },
     { label: 'Fines', cls: 'num', render: (m) => (m.unpaid_fines ? badge(rupees(m.unpaid_fines), 'red') : '<span class="muted">—</span>') },
     { label: '', cls: 'num', render: (m) => `<div class="row-actions">${m.unpaid_fines ? `<button class="btn sm success" data-act="pay" data-id="${m.id}">Collect</button>` : ''}
@@ -1349,6 +1368,10 @@ function memberForm(m = {}) {
     <div class="row2">
       <label class="field">Phone <input name="phone" type="tel" placeholder="98765 43210" value="${esc(m.phone)}"></label>
       <label class="field">Email <input name="email" type="email" placeholder="name@example.com" value="${esc(m.email)}"></label>
+    </div>
+    <div class="row2">
+      <label class="field">Membership plan <select name="membership_type">${['General', 'Student', 'Faculty', 'Senior'].map((t) => `<option ${(m.membership_type || 'General') === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label class="field">Valid until <input name="valid_until" type="date" value="${esc(m.valid_until || (m.id ? '' : addDays(TODAY, 365)))}"><small>Leave empty for no expiry. Expired members can't borrow.</small></label>
     </div>
     <label class="switch"><input type="checkbox" name="active" ${m.active === 0 ? '' : 'checked'}><span class="track"></span>Active member — can borrow and reserve</label>
     ${m.id && m.open_reservations ? `<div class="callout warn">${icon('alert')}<span>Making this member inactive cancels their ${plural(m.open_reservations, 'open reservation')} and passes any held copy to the next person in the queue.</span></div>` : ''}`;
@@ -1382,7 +1405,7 @@ async function memberDrawer(memberId) {
   const onTime = d.history.length ? Math.round((d.history.filter((l) => !l.fine).length / d.history.length) * 100) : null;
   return `
     <div class="d-hero"><div class="d-head">${avatar(m.name, 'lg')}<div><h2>${esc(m.name)}</h2><div class="sub mono">${esc(m.member_code)}</div>
-      <div class="badges">${m.active ? badge('Active', 'green', true) : badge('Inactive', '', true)}${m.unpaid_fines ? badge(`Owes ${rupees(m.unpaid_fines)}`, 'red') : ''}</div></div></div>
+      <div class="badges">${membershipBadge(m)}${badge(esc(m.membership_type || 'General'), 'indigo')}${m.unpaid_fines ? badge(`Owes ${rupees(m.unpaid_fines)}`, 'red') : ''}</div></div></div>
       <div class="d-stats">
         <div class="d-stat"><div class="v">${m.active_issues}<span class="muted" style="font-size:14px"> / ${RULES.MAX_ACTIVE_ISSUES}</span></div><div class="l">books on loan</div></div>
         <div class="d-stat"><div class="v">${totalLoans}</div><div class="l">total loans</div></div>
@@ -1392,11 +1415,12 @@ async function memberDrawer(memberId) {
         ${m.active ? actBtn('issue-to', 'arrowOut', 'Issue a book', 'primary', `data-id="${m.id}"`) : ''}
         ${m.unpaid_fines ? actBtn('pay', 'wallet', `Collect ${rupees(m.unpaid_fines)}`, 'success', `data-id="${m.id}"`) : ''}
         ${actBtn('edit-member', 'edit', 'Edit', '', `data-id="${m.id}"`)}
+        ${actBtn('renew-membership', 'renew', memberExpired(m) ? 'Renew membership' : 'Extend membership', memberExpired(m) ? 'primary' : '', `data-id="${m.id}"`)}
         ${actBtn('print-card', 'idCard', 'Library card', '', `data-id="${m.id}"`)}
       </div></div>
     <div class="d-body">
       <div class="d-sec"><h3>Contact</h3><dl class="kv"><dt>Phone</dt><dd>${esc(m.phone) || '—'}</dd><dt>Email</dt><dd>${esc(m.email) || '—'}</dd>
-        <dt>Member since</dt><dd>${fmtDate(m.join_date)}</dd><dt>Fines paid</dt><dd>${rupees(finesPaid)}</dd></dl></div>
+        <dt>Member since</dt><dd>${fmtDate(m.join_date)}</dd><dt>Membership</dt><dd>${esc(m.membership_type || 'General')} · ${m.valid_until ? `${memberExpired(m) ? '<span class="t-red">expired</span> ' : 'valid until '}${fmtDate(m.valid_until)}` : 'no expiry'}</dd><dt>Fines paid</dt><dd>${rupees(finesPaid)}</dd></dl></div>
       <div class="d-sec"><h3>On loan ${badge(d.activeIssues.length)}</h3>${d.activeIssues.length ? `<div class="d-list">${d.activeIssues.map((l) => `<div class="d-item">${cover(l.title, 'sm')}<div class="grow"><b>${esc(l.title)}</b>
         <div class="sub">Due ${fmtDate(l.due_on)} · ${l.overdue ? `<span class="t-red">${plural(l.days_overdue, 'day')} late · ${rupees(l.accrued_fine)}</span>` : relDays(l.due_on)}</div></div>${loanActions(l, true)}</div>`).join('')}</div>` : '<p class="muted small">No books on loan.</p>'}</div>
       <div class="d-sec"><h3>Reservations ${badge(d.reservations.length)}</h3>${d.reservations.length ? `<div class="d-list">${d.reservations.map((r) => `<div class="d-item">${cover(r.title, 'sm')}<div class="grow"><b>${esc(r.title)}</b>

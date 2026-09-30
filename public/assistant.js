@@ -79,6 +79,7 @@
     const checks = [];
     const add = (ok, text) => checks.push({ ok, text });
     add(!!m.active, m.active ? 'Membership is active' : 'Membership is inactive');
+    if (m.active && m.valid_until && m.valid_until < TODAY) add(false, `Membership expired on ${fmtDate(m.valid_until)} — it must be renewed first`);
     add(!m.unpaid_fines, m.unpaid_fines ? `Has an unpaid fine of ${rupees(m.unpaid_fines)} — it must be paid first` : 'No unpaid fines');
     add(m.active_issues < RULES.MAX_ACTIVE_ISSUES, `Holds ${m.active_issues} of ${RULES.MAX_ACTIVE_ISSUES} allowed books`);
     if (b) {
@@ -115,7 +116,8 @@
   function memberSummary(m) {
     const loans = loansOf(m);
     const res = state.reservations.filter((r) => r.member_id === m.id);
-    let html = `<p><b>${esc(m.name)}</b> (${esc(m.member_code)}) · ${m.active ? 'active' : '<b>inactive</b>'} member since ${fmtDate(m.join_date)}.</p>`;
+    const exp = m.valid_until && m.valid_until < TODAY;
+    let html = `<p><b>${esc(m.name)}</b> (${esc(m.member_code)}) · ${esc(m.membership_type || 'General')} · ${m.active ? (exp ? '<b class="t-red">membership expired</b>' : 'active') : '<b>inactive</b>'} member since ${fmtDate(m.join_date)}${m.valid_until ? ` · ${exp ? 'expired' : 'valid until'} ${fmtDate(m.valid_until)}` : ''}.</p>`;
     html += loans.length
       ? `<p>On loan (${loans.length}/${RULES.MAX_ACTIVE_ISSUES}):</p>${li(loans.map((l) => `<b>${esc(l.title)}</b> — due ${fmtShort(l.due_on)}${l.overdue ? ` <span class="t-red">(${plural(l.days_overdue, 'day')} overdue, ${rupees(l.accrued_fine)} accruing)</span>` : ` (${relDays(l.due_on)})`}`))}`
       : '<p>No books on loan.</p>';
@@ -246,6 +248,10 @@
       'While people are waiting, the book can only be issued to the first person in the queue.',
       'If the hold expires, the copy passes to the next person (or back to the shelf).'])}`, actions: () => [nav('Open reservations', 'reservations')] },
     { re: /(delete|remove)/, when: /(book|title)/, html: () => '<p>A book <b>cannot be deleted while any copy is on loan</b> or while it has open reservations — the app refuses and tells you who has it. Deleting keeps past loans and fines in the records.</p>', actions: () => [nav('Open books', 'books')] },
+    { re: /(membership|expir|renew membership|valid until|plan)/, when: /(membership|expir|valid|plan)/, html: () => `<p><b>Memberships</b> have a plan (General, Student, Faculty or Senior) and an optional <b>valid until</b> date.</p>${li([
+      'When a membership has <b>expired</b>, the member cannot borrow or reserve until it is renewed.',
+      'Renew from the member\'s profile (<b>Renew membership</b>) for 6 months to 3 years; the new period starts from today, or from the current expiry if it hasn\'t passed yet.',
+      'Members without an expiry date never expire.'])}`, actions: () => [nav('Open members', 'members')] },
     { re: /(inactive|deactivat|disable)/, when: /./, html: () => '<p>Inactive members <b>cannot borrow or reserve</b>. Making a member inactive cancels their open reservations and passes any held copy to the next person in the queue. They must still return books they already have.</p>', actions: () => [nav('Open members', 'members')] },
   ];
 
@@ -253,7 +259,12 @@
     { re: /(issue|lend|check ?out|give)/, title: 'issue a book', steps: ['Open <b>Issue Book</b> in the sidebar (or press <kbd>I</kbd>).', 'Search and select the <b>member</b>.', 'Search and select the <b>book</b>.', `Check the due date (default ${RULES.LOAN_DAYS} days) and the rule checklist on the right.`, 'Click <b>Issue book</b> — you can print a loan slip afterwards.'], act: () => btn('Go to Issue', 'data-act="go-issue"', 'primary') },
     { re: /(return|check ?in|give back)/, title: 'return a book', steps: ['Open <b>Return Book</b> in the sidebar (or press <kbd>R</kbd>).', 'Find the loan by member, title or ISBN.', 'Click <b>Return</b> and confirm the return date — any late fine is shown before you confirm.', 'Print the receipt or collect the fine straight away.'], act: () => btn('Go to Returns', 'data-act="go-return"', 'primary') },
     { re: /(reserv|hold|queue)/, title: 'reserve a book', steps: ['Go to <b>Reservations</b>.', 'Select the member and the book (only books with no copy on the shelf are listed).', 'Click <b>Reserve</b> — the member joins the end of the queue.'], act: () => nav('Open reservations', 'reservations', 'data-primary') },
+    { re: /(renew|extend).*(membership)|(membership).*(renew|extend)/, title: 'renew a membership', steps: ['Open <b>Members</b> and click the member.', 'Click <b>Renew membership</b> (or <b>Extend membership</b>).', 'Choose 6 months to 3 years and confirm.'], act: () => nav('Open members', 'members', 'data-primary') },
     { re: /(renew|extend)/, title: 'renew a loan', steps: ['Open <b>Return Book</b> in the sidebar.', 'Click <b>Renew</b> on the loan.', 'If the button is disabled, hover it to see why (overdue, unpaid fines, or someone waiting).'], act: () => nav('Open loans', 'loans', 'data-primary') },
+    { re: /(buy|purchase|acquisition|acquire|order (new )?books?|vendor|supplier)/, title: 'buy new books (acquisitions)', steps: ['Open <b>Acquisitions</b> in the sidebar and click <b>New purchase request</b>.', 'Enter title, author, ISBN, vendor, quantity and cost per copy.', 'Click <b>Order</b> when it is ordered from the vendor.', 'When the delivery arrives click <b>Receive</b> — the copies are added to the catalogue (existing ISBNs get extra copies, and anyone waiting in the queue gets them first).'], act: () => nav('Open acquisitions', 'acquisitions', 'data-primary') },
+    { re: /(digital|e ?-?books?|ebooks?|journals?|audio ?books?|online resource|website|videos?)/, title: 'use the Digital Library', steps: ['Open <b>Digital Library</b> in the sidebar.', 'Filter by type (E-book, Journal, Audiobook, Video, Website, Database) or search.', 'Click <b>Open</b> to open the resource — views are counted.', 'Use <b>Add digital resource</b> to add a new link; mark it <i>Members only</i> if it needs a library card.'], act: () => nav('Open digital library', 'digital', 'data-primary') },
+    { re: /(report|statistic|analytics)/, title: 'run a report', steps: ['Open <b>Reports</b> in the sidebar.', 'Choose a report: circulation, overdue, fines, most borrowed, categories, members, inventory, acquisitions or digital usage.', 'Pick a period (last 7/30 days, this month, this year or custom dates).', 'Click <b>Export CSV</b> or <b>Print</b>.'], act: () => nav('Open reports', 'reports', 'data-primary') },
+    { re: /(scan|barcode|rfid|scanner)/, title: 'scan barcodes / RFID', steps: ['<b>Issue:</b> on <b>Issue Book</b>, click the scan box, scan the member card, then the book barcode — both are selected automatically.', '<b>Return:</b> on <b>Return Book</b>, scan the book barcode — its return opens straight away.', 'Book labels: open a book and click <b>Print label</b> (EAN-13 barcode). Member cards: open a member and click <b>Library card</b> (Code 39 barcode).', 'Any USB/Bluetooth barcode scanner or RFID reader in keyboard mode works; you can also type a member ID or ISBN and press Enter.'], act: () => btn('Go to Issue', 'data-act="go-issue"', 'primary') },
     { re: /(import|upload|bulk|csv)/, title: 'import books from CSV', steps: ['Go to <b>Books</b> and click <b>Template</b> to download an example file.', 'Fill in title, author, isbn, category, total_copies.', 'Click <b>Import CSV</b>, check the preview, then confirm.', 'Rows with errors (missing fields, bad or duplicate ISBN) are skipped and listed.'], act: () => nav('Open books', 'books', 'data-primary') },
     { re: /(export|download|report)/, title: 'export data', steps: ['<b>Overdue list</b>: Return Book → <i>Overdue CSV</i>.', '<b>Books / Members</b>: the <i>Export</i> button on each page.', '<b>Fines</b>: Fines → <i>Export CSV</i>.'], act: () => btn('Download overdue CSV', 'data-download="/api/reports/overdue.csv"') },
     { re: /(add|create|new|register).*(book|title)|(book|title).*(add|create)/, title: 'add a book', steps: ['Go to <b>Books</b> and click <b>Add book</b>.', 'Enter title, author, ISBN (10 or 13 digits), category and total copies.', 'Click <b>Add book</b> — all copies start on the shelf.'], act: () => btn('Add a book', 'data-act="add-book"', 'primary') },
@@ -328,6 +339,13 @@
     const inCat = text.match(/\b(?:books?|titles?)\s+(?:in|on|about|under)\s+(?:the\s+)?(.+?)(?:\s+category)?[?.!]*$/i);
     if (inCat) return searchAnswer('category', inCat[1]);
 
+    if (/(expired|expiring).*(member)|(member).*(expired)|expired memberships?/.test(t)) {
+      const ex = state.members.filter((mm) => mm.active && mm.valid_until && mm.valid_until < TODAY);
+      return ex.length
+        ? reply(`<p><b>${plural(ex.length, 'membership')}</b> expired — they can't borrow until renewed:</p>${li(ex.map((mm) => `${esc(mm.name)} (${esc(mm.member_code)}) — ${esc(mm.membership_type || 'General')}, expired ${fmtDate(mm.valid_until)}`))}`,
+          ex.slice(0, 3).map((mm) => btn(`Renew ${mm.name.split(' ')[0]}`, `data-act="renew-membership" data-id="${mm.id}"`, 'primary')))
+        : reply('<p>No memberships have expired.</p>', [nav('Open members', 'members')]);
+    }
     if (/(overdue|late|not returned|past due)/.test(t)) return overdueAnswer();
     if (/(fine|owe|unpaid|penalt|dues)/.test(t)) return finesAnswer();
     if (/(pick ?up|ready|collect(ion)?|held)/.test(t)) return pickupAnswer();
@@ -476,6 +494,7 @@
       closeDrawer();
       if (to === 'overdue' || to === 'loans' || to === 'due-soon') { ui.loanFilter = to === 'loans' ? 'active' : to; go('returns'); }
       else if (to === 'fines') { ui.fineFilter = 'unpaid'; go('fines'); }
+      else if (to === 'acquisitions' || to === 'digital' || to === 'reports') go(to);
       else go(to);
       return;
     }

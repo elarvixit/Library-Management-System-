@@ -430,6 +430,124 @@ describe('fines ledger & stats', () => {
   });
 });
 
+describe('catalogue details & memberships', () => {
+  test('books keep publisher, year and shelf; bad year refused', () => {
+    const b = lib.addBook({ title: 'T', author: 'A', isbn: '9780000000031', total_copies: 1, publisher: 'Penguin', year: 1999, shelf: 'a-3' });
+    assert.equal(b.publisher, 'Penguin');
+    assert.equal(b.year, 1999);
+    assert.equal(b.shelf, 'A-3');
+    rejects(() => lib.addBook({ title: 'T', author: 'A', isbn: '9780000000048', total_copies: 1, year: 99 }), /4-digit publication year/);
+  });
+
+  test('membership types; an expired membership blocks issuing and reserving until renewed', () => {
+    const m = lib.addMember({ name: 'Student One', membership_type: 'Student', valid_until: '2026-01-05' });
+    assert.equal(m.membership_type, 'Student');
+    rejects(() => lib.addMember({ name: 'X', membership_type: 'VIP' }), /Membership type must be one of/);
+    const b = book(1);
+    rejects(() => issue(m, b), /membership expired on 2026-01-05/);
+    issue(member(), b);
+    rejects(() => reserve(m, b), /membership expired/);
+    const r = lib.renewMembership(m.id);
+    assert.equal(r.valid_until, '2027-01-10'); // 12 months from today (expiry was in the past)
+    reserve(m, b);
+    // renewing an active membership extends from its current expiry
+    assert.equal(lib.renewMembership(m.id, { months: 6 }).valid_until, '2027-07-10');
+    assert.equal(lib.addMember({ name: 'No Expiry' }).valid_until, null);
+  });
+});
+
+describe('acquisitions', () => {
+  test('request -> order -> receive creates a new book with the copies', () => {
+    const a = lib.addAcquisition({ title: 'New Title', author: 'Writer', isbn: '978-0-00-000005-5', vendor: 'Book House', quantity: 3, unit_cost: 450 });
+    assert.equal(a.status, 'requested');
+    assert.equal(a.total_cost, 1350);
+    assert.equal(lib.orderAcquisition(a.id).status, 'ordered');
+    rejects(() => lib.orderAcquisition(a.id), /Only a requested purchase/);
+    const r = lib.receiveAcquisition(a.id);
+    assert.equal(r.createdBook, true);
+    assert.equal(r.book.total_copies, 3);
+    assert.equal(r.book.available_copies, 3);
+    assert.equal(r.acquisition.status, 'received');
+    rejects(() => lib.receiveAcquisition(a.id), /already received/);
+    rejects(() => lib.updateAcquisition(a.id, { quantity: 9 }), /can no longer be edited/);
+  });
+
+  test('receiving extra copies of an existing ISBN serves the reservation queue first', () => {
+    const b = book(1);
+    issue(member(), b);
+    const r1 = reserve(member('Waiter'), b);
+    const a = lib.addAcquisition({ title: b.title, author: b.author, isbn: b.isbn, quantity: 2 });
+    const r = lib.receiveAcquisition(a.id); // receiving without ordering first is allowed
+    assert.equal(r.createdBook, false);
+    assert.equal(r.book.total_copies, 3);
+    assert.equal(r.promoted[0].memberName, 'Waiter');
+    assert.equal(res(r1).status, 'ready');
+    assert.equal(avail(b), 1);
+  });
+
+  test('cancelled purchases cannot be received; validation', () => {
+    const a = lib.addAcquisition({ title: 'X', author: 'Y', isbn: '9780000000062', quantity: 1 });
+    lib.cancelAcquisition(a.id);
+    rejects(() => lib.receiveAcquisition(a.id), /cancelled/);
+    rejects(() => lib.addAcquisition({ title: 'X', author: 'Y', isbn: '9780000000079', quantity: 0 }), /Quantity/);
+    rejects(() => lib.addAcquisition({ title: 'X', author: 'Y', isbn: 'bad', quantity: 1 }), /ISBN/);
+  });
+});
+
+describe('digital resources', () => {
+  test('add, search, open (counts views), edit, delete; links validated', () => {
+    const d = lib.addDigital({ title: 'Open Maths', type: 'E-book', url: 'https://example.org/maths.pdf', category: 'Science' });
+    assert.equal(d.access, 'Open');
+    rejects(() => lib.addDigital({ title: 'Bad', url: 'ftp://x' }), /http:\/\/ or https:\/\//);
+    rejects(() => lib.addDigital({ title: 'Bad', url: 'https://x.org', type: 'Podcast' }), /Type must be one of/);
+    assert.equal(lib.listDigital({ q: 'math' }).length, 1);
+    assert.equal(lib.listDigital({ type: 'Video' }).length, 0);
+    assert.equal(lib.openDigital(d.id).views, 1);
+    assert.equal(lib.updateDigital(d.id, { access: 'Members only' }).access, 'Members only');
+    lib.deleteDigital(d.id);
+    assert.equal(lib.listDigital().length, 0);
+  });
+});
+
+describe('barcode / RFID scan', () => {
+  test('resolves member cards and book ISBNs (with active loans)', () => {
+    const m = lib.addMember({ name: 'Card Holder' });
+    const b = lib.addBook({ title: 'Scan Me', author: 'A', isbn: '9780000000086', total_copies: 2 });
+    issue(m, b);
+    assert.equal(lib.scan(m.member_code.toLowerCase()).kind, 'member');
+    const s = lib.scan('978-0-00-000008-6');
+    assert.equal(s.kind, 'book');
+    assert.equal(s.loans.length, 1);
+    assert.equal(lib.scan('nothing').kind, 'none');
+    rejects(() => lib.scan('  '), /Nothing was scanned/);
+  });
+});
+
+describe('reports', () => {
+  test('circulation, fines, inventory and acquisitions reports', async () => {
+    const { buildReport } = await import('../src/reports.js');
+    const m = member('Asha');
+    const b = book(2);
+    const i = issue(m, b);
+    advance(16);
+    ret(i); // ₹10 fine
+    lib.payFines(m.id);
+    const c = await buildReport(lib, 'circulation', { from: '2026-01-10', to: '2026-01-26' });
+    assert.equal(c.rows.length, 17);
+    assert.equal(c.rows[0].issued, 1);
+    assert.equal(c.rows.at(-1).returned, 1);
+    const f = await buildReport(lib, 'fines', { from: '2026-01-01', to: '2026-01-31' });
+    assert.deepEqual(f.summary.map((x) => x.value), ['₹10', '₹10', '₹0']);
+    const inv = await buildReport(lib, 'inventory');
+    assert.equal(inv.rows[0].total, 2);
+    lib.addAcquisition({ title: 'P', author: 'Q', isbn: '9780000000093', quantity: 2, unit_cost: 100 });
+    const a = await buildReport(lib, 'acquisitions', {});
+    assert.equal(a.rows[0].total_cost, 200);
+    await assert.rejects(buildReport(lib, 'nope'), /Unknown report/);
+    await assert.rejects(buildReport(lib, 'fines', { from: '2026-02-01', to: '2026-01-01' }), /before/);
+  });
+});
+
 describe('CSV', () => {
   test('parses quoted fields and header aliases', () => {
     const rows = parseBooksCsv('﻿Title,Author,ISBN,Category,Copies\r\n"Hello, World","O\'Neil ""Jr""",9780000000017,Tech,2\r\n\r\n');

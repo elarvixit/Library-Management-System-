@@ -65,7 +65,52 @@ CREATE INDEX IF NOT EXISTS ix_res_book ON reservations(book_id, status);
 -- A member can have at most one open reservation per book.
 CREATE UNIQUE INDEX IF NOT EXISTS ux_res_open ON reservations(book_id, member_id)
   WHERE status IN ('waiting', 'ready');
+
+-- Acquisition: buying new titles or extra copies.
+-- status: requested -> ordered -> received   (or cancelled before it is received)
+-- Receiving adds the copies to the catalogue (new book, or extra copies of an existing ISBN).
+CREATE TABLE IF NOT EXISTS acquisitions (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  title        TEXT    NOT NULL,
+  author       TEXT    NOT NULL,
+  isbn         TEXT    NOT NULL,
+  category     TEXT    NOT NULL DEFAULT 'General',
+  vendor       TEXT    NOT NULL DEFAULT '',
+  quantity     INTEGER NOT NULL CHECK (quantity >= 1),
+  unit_cost    INTEGER NOT NULL DEFAULT 0 CHECK (unit_cost >= 0),   -- rupees per copy
+  status       TEXT    NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'ordered', 'received', 'cancelled')),
+  requested_on TEXT    NOT NULL,
+  ordered_on   TEXT,
+  received_on  TEXT,
+  notes        TEXT    NOT NULL DEFAULT '',
+  book_id      INTEGER REFERENCES books(id)                        -- set when received
+);
+
+-- Digital resources: e-books, journals, audiobooks, videos, websites, databases.
+CREATE TABLE IF NOT EXISTS digital_resources (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  title       TEXT    NOT NULL,
+  author      TEXT    NOT NULL DEFAULT '',
+  type        TEXT    NOT NULL DEFAULT 'E-book' CHECK (type IN ('E-book', 'Journal', 'Audiobook', 'Video', 'Website', 'Database')),
+  url         TEXT    NOT NULL,
+  category    TEXT    NOT NULL DEFAULT 'General',
+  access      TEXT    NOT NULL DEFAULT 'Open' CHECK (access IN ('Open', 'Members only')),
+  description TEXT    NOT NULL DEFAULT '',
+  added_on    TEXT    NOT NULL,
+  views       INTEGER NOT NULL DEFAULT 0,
+  deleted     INTEGER NOT NULL DEFAULT 0
+);
 `;
+
+// Columns added after the first version: [table, column, definition]
+const MIGRATIONS = [
+  ['issues', 'renewals', 'INTEGER NOT NULL DEFAULT 0'],
+  ['books', 'publisher', "TEXT NOT NULL DEFAULT ''"],
+  ['books', 'year', 'INTEGER'],
+  ['books', 'shelf', "TEXT NOT NULL DEFAULT ''"],                   // rack / shelf location, e.g. A-3
+  ['members', 'membership_type', "TEXT NOT NULL DEFAULT 'General'"], // Student / Faculty / General / Senior
+  ['members', 'valid_until', 'TEXT'],                                 // membership expiry (null = no expiry)
+];
 
 export function openDb(file = ':memory:') {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -74,7 +119,9 @@ export function openDb(file = ':memory:') {
   if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
   // Migrations for databases created by earlier versions.
-  const issueCols = db.prepare('PRAGMA table_info(issues)').all().map((c) => c.name);
-  if (!issueCols.includes('renewals')) db.exec('ALTER TABLE issues ADD COLUMN renewals INTEGER NOT NULL DEFAULT 0');
+  for (const [table, column, def] of MIGRATIONS) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+  }
   return db;
 }

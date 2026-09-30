@@ -1,8 +1,9 @@
 -- =====================================================================
--- Library Management System — ONE-SHOT SUPABASE SETUP
+-- Library Management System — ONE-SHOT SUPABASE SETUP (new database)
 -- Paste this whole file into Supabase → SQL Editor → New query → Run.
--- It creates the tables, the business-rule functions and views, and loads demo data.
--- WARNING: it DROPS and recreates the library tables (books, members, issues, reservations).
+-- It creates all tables, the business-rule functions and views, and loads demo data.
+-- WARNING: it DROPS and recreates the library tables. To keep existing data, run
+-- upgrade-modules.sql instead.
 -- =====================================================================
 
 -- =====================================================================
@@ -11,6 +12,8 @@
 -- Safe to re-run: it drops and recreates the four tables.
 -- =====================================================================
 
+drop table if exists digital_resources cascade;
+drop table if exists acquisitions cascade;
 drop table if exists reservations cascade;
 drop table if exists issues cascade;
 drop table if exists members cascade;
@@ -31,6 +34,9 @@ create table books (
   total_copies     integer not null check (total_copies >= 1),
   available_copies integer not null check (available_copies >= 0 and available_copies <= total_copies),
   deleted          boolean not null default false,   -- soft delete keeps loan & fine history
+  publisher        text    not null default '',
+  year             integer check (year is null or year between 1000 and 2100),
+  shelf            text    not null default '',       -- rack / shelf location, e.g. A-3
   created_at       timestamptz not null default now()
 );
 -- ISBN must be unique among books that are not deleted
@@ -49,7 +55,9 @@ create table members (
   phone       text    not null default '',
   email       text    not null default '' check (email = '' or email ~* '^[^\s@]+@[^\s@]+\.[^\s@]+$'),
   join_date   date    not null default current_date,
-  active      boolean not null default true
+  active      boolean not null default true,
+  membership_type text not null default 'General' check (membership_type in ('General', 'Student', 'Faculty', 'Senior')),
+  valid_until date                                  -- membership expiry (null = never expires)
 );
 create index ix_members_name on members (lower(name));
 
@@ -101,6 +109,46 @@ create table reservations (
 create index ix_res_book on reservations (book_id, status);
 -- At most one open reservation per member per book
 create unique index ux_res_open on reservations (book_id, member_id) where status in ('waiting', 'ready');
+
+-- ---------------------------------------------------------------------
+-- acquisitions: buying new titles or extra copies.
+-- status: requested -> ordered -> received (or cancelled). Receiving adds the copies to books.
+-- ---------------------------------------------------------------------
+create table if not exists acquisitions (
+  id           bigint generated always as identity primary key,
+  title        text    not null check (length(trim(title)) > 0),
+  author       text    not null,
+  isbn         text    not null check (isbn ~ '^([0-9]{9}[0-9X]|[0-9]{13})$'),
+  category     text    not null default 'General',
+  vendor       text    not null default '',
+  quantity     integer not null check (quantity >= 1),
+  unit_cost    integer not null default 0 check (unit_cost >= 0),   -- rupees per copy
+  status       text    not null default 'requested' check (status in ('requested', 'ordered', 'received', 'cancelled')),
+  requested_on date    not null default current_date,
+  ordered_on   date,
+  received_on  date,
+  notes        text    not null default '',
+  book_id      bigint references books (id)
+);
+
+-- ---------------------------------------------------------------------
+-- digital_resources: e-books, journals, audiobooks, videos, websites, databases
+-- ---------------------------------------------------------------------
+create table if not exists digital_resources (
+  id          bigint generated always as identity primary key,
+  title       text    not null check (length(trim(title)) > 0),
+  author      text    not null default '',
+  type        text    not null default 'E-book' check (type in ('E-book', 'Journal', 'Audiobook', 'Video', 'Website', 'Database')),
+  url         text    not null check (url ~* '^https?://'),
+  category    text    not null default 'General',
+  access      text    not null default 'Open' check (access in ('Open', 'Members only')),
+  description text    not null default '',
+  added_on    date    not null default current_date,
+  views       integer not null default 0,
+  deleted     boolean not null default false
+);
+alter table acquisitions      enable row level security;
+alter table digital_resources enable row level security;
 
 -- ---------------------------------------------------------------------
 -- Security: turn on Row Level Security with NO public policies.
@@ -192,6 +240,9 @@ begin
   if not found then raise exception 'Book not found.'; end if;
 
   if not m.active then raise exception '% is inactive and cannot borrow books.', m.name; end if;
+  if m.valid_until is not null and m.valid_until < current_date then
+    raise exception '%''s membership expired on %. Renew the membership before they can borrow books.', m.name, m.valid_until;
+  end if;
 
   select coalesce(sum(fine), 0) into owed from issues where member_id = m.id and fine > 0 and not fine_paid;
   if owed > 0 then
@@ -303,6 +354,9 @@ begin
   select * into b from books where id = p_book and not deleted for update;
   if not found then raise exception 'Book not found.'; end if;
   if not m.active then raise exception '% is inactive and cannot reserve books.', m.name; end if;
+  if m.valid_until is not null and m.valid_until < current_date then
+    raise exception '%''s membership expired on %. Renew the membership before they can reserve books.', m.name, m.valid_until;
+  end if;
   if exists (select 1 from reservations where book_id = b.id and member_id = m.id and status in ('waiting', 'ready')) then
     raise exception '% already has a reservation for "%".', m.name, b.title;
   end if;
@@ -365,6 +419,8 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------- views for the dashboard
+-- dropped first so they can pick up columns added by upgrades
+drop view if exists v_books, v_members, v_overdue, v_issued_today, v_ready_for_pickup, v_pending_reservations, v_dashboard cascade;
 create or replace view v_books as
 select b.*,
        (select count(*) from issues i where i.book_id = b.id and i.returned_on is null)             as issued_copies,
@@ -569,6 +625,37 @@ from (values
 join books b on b.isbn = x.isbn
 join members m on m.member_code = x.code
 order by x.ord;  -- ids (= queue order) follow this order
+
+-- Membership plans (one Student membership expired last month, to show the rule)
+update members set membership_type = 'Student', valid_until = (current_date + interval '8 months')::date where name = 'Priya Sharma';
+update members set membership_type = 'Student', valid_until = (current_date + interval '5 months')::date where name = 'Rahul Verma';
+update members set membership_type = 'Student', valid_until = (current_date + interval '10 months')::date where name = 'Ananya Gupta';
+update members set membership_type = 'Faculty', valid_until = (current_date + interval '20 months')::date where name = 'Karthik Nair';
+update members set membership_type = 'Faculty', valid_until = (current_date + interval '14 months')::date where name = 'Divya Menon';
+update members set membership_type = 'Senior', valid_until = (current_date + interval '12 months')::date where name = 'Lakshmi Srinivasan';
+update members set membership_type = 'Senior', valid_until = (current_date + interval '9 months')::date where name = 'Suresh Babu';
+update members set membership_type = 'Student', valid_until = (current_date + interval '-1 months')::date where name = 'Yash Chauhan';
+
+-- Acquisitions at every stage; the received one added 2 copies of The Alchemist
+insert into acquisitions (title, author, isbn, category, vendor, quantity, unit_cost, status, requested_on, ordered_on, received_on) values
+  ('Harry Potter and the Chamber of Secrets', 'J.K. Rowling', '9780747538493', 'Children', 'Sapna Book House', 3, 399, 'requested', current_date - 6, null, null),
+  ('Clean Architecture', 'Robert C. Martin', '9780134494166', 'Technology', 'Amazon Business', 1, 2450, 'ordered', current_date - 6, current_date - 4, null),
+  ('Let Us C', 'Yashavant Kanetkar', '9789388511391', 'Technology', 'Higginbothams', 2, 350, 'ordered', current_date - 6, current_date - 4, null),
+  ('The Alchemist', 'Paulo Coelho', '9780062315007', 'Fiction', 'Sapna Book House', 2, 299, 'received', current_date - 6, current_date - 4, current_date - 1);
+update books set total_copies = total_copies + 2 where isbn = '9780062315007';
+update acquisitions set book_id = (select id from books where isbn = '9780062315007') where isbn = '9780062315007' and status = 'received';
+
+-- Free, public digital resources
+insert into digital_resources (title, author, type, url, category, access, description, views) values
+  ('Pride and Prejudice (e-book)', 'Jane Austen', 'E-book', 'https://www.gutenberg.org/ebooks/1342', 'Classics', 'Open', 'Free public-domain edition from Project Gutenberg.', 18),
+  ('The Adventures of Sherlock Holmes', 'Arthur Conan Doyle', 'E-book', 'https://www.gutenberg.org/ebooks/1661', 'Fiction', 'Open', 'Twelve classic detective stories.', 16),
+  ('LibriVox Audiobooks', 'LibriVox volunteers', 'Audiobook', 'https://librivox.org/', 'Fiction', 'Open', 'Free public-domain audiobooks read by volunteers.', 14),
+  ('National Digital Library of India', 'IIT Kharagpur', 'Database', 'https://ndl.iitkgp.ac.in/', 'Reference', 'Members only', 'Millions of books, papers and lectures for Indian students.', 12),
+  ('NCERT Textbooks', 'NCERT', 'Database', 'https://ncert.nic.in/textbook.php', 'Education', 'Open', 'Official school textbooks, classes 1–12.', 10),
+  ('arXiv — Computer Science', 'Cornell University', 'Journal', 'https://arxiv.org/list/cs/recent', 'Technology', 'Members only', 'Latest open-access research papers in computer science.', 8),
+  ('Khan Academy — Computing', 'Khan Academy', 'Video', 'https://www.khanacademy.org/computing', 'Technology', 'Open', 'Free video lessons on programming and computer science.', 6),
+  ('MDN Web Docs', 'Mozilla', 'Website', 'https://developer.mozilla.org/', 'Technology', 'Open', 'Reference for HTML, CSS and JavaScript.', 4),
+  ('Wikipedia', 'Wikimedia Foundation', 'Website', 'https://www.wikipedia.org/', 'Reference', 'Open', 'The free encyclopedia.', 2);
 
 -- available = total − copies on loan − copies held for pickup
 update books b set available_copies = b.total_copies

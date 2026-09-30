@@ -99,6 +99,73 @@ export function validPhone(value) {
   return s;
 }
 export const bool = (v) => v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
+
+export const MEMBERSHIP_TYPES = ['General', 'Student', 'Faculty', 'Senior'];
+export const ACQ_STATUSES = ['requested', 'ordered', 'received', 'cancelled'];
+export const DIGITAL_TYPES = ['E-book', 'Journal', 'Audiobook', 'Video', 'Website', 'Database'];
+export const DIGITAL_ACCESS = ['Open', 'Members only'];
+export function addMonths(date, n) {
+  const [y, m, d] = date.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1 + n, 1));
+  const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+  t.setUTCDate(Math.min(d, last));
+  return t.toISOString().slice(0, 10);
+}
+const oneOf = (value, list, field, fallback) => {
+  const v = String(value ?? fallback).trim();
+  if (!list.includes(v)) throw new LibraryError(`${field} must be one of: ${list.join(', ')}.`);
+  return v;
+};
+/** Optional catalogue details: publisher, publication year, shelf / rack location. */
+export function bookExtras(input) {
+  const yearRaw = input.year === '' || input.year === null || input.year === undefined ? null : Number(input.year);
+  if (yearRaw !== null && (!Number.isInteger(yearRaw) || yearRaw < 1000 || yearRaw > new Date().getFullYear() + 1)) {
+    throw new LibraryError('Year must be a 4-digit publication year.');
+  }
+  return { publisher: optionalText(input.publisher, 120), year: yearRaw, shelf: optionalText(input.shelf, 30).toUpperCase() };
+}
+/** Membership plan and expiry date (empty = never expires). */
+export function membershipInput(input) {
+  const vu = input.valid_until ?? input.validUntil;
+  return {
+    type: oneOf(input.membership_type ?? input.membershipType, MEMBERSHIP_TYPES, 'Membership type', 'General'),
+    validUntil: vu ? parseDate(String(vu).slice(0, 10), 'Valid until') : null,
+  };
+}
+/** Why a member may not borrow or reserve, or null when they may. */
+export function membershipBlock(member, today, verb = 'borrow books') {
+  if (!member.active) return `${member.name} is inactive and cannot ${verb}.`;
+  if (member.valid_until && member.valid_until < today) {
+    return `${member.name}'s membership expired on ${member.valid_until}. Renew the membership before they can ${verb}.`;
+  }
+  return null;
+}
+export function acquisitionInput(input) {
+  const cost = input.unit_cost ?? input.unitCost;
+  return {
+    title: requiredText(input.title, 'Title'),
+    author: requiredText(input.author, 'Author'),
+    isbn: normalizeIsbn(input.isbn),
+    category: optionalText(input.category, 80) || 'General',
+    vendor: optionalText(input.vendor, 120),
+    quantity: positiveInt(input.quantity, 'Quantity'),
+    unitCost: cost === '' || cost === undefined || cost === null ? 0 : positiveInt(cost, 'Cost per copy', 0),
+    notes: optionalText(input.notes, 500),
+  };
+}
+export function digitalInput(input) {
+  const url = String(input.url ?? '').trim();
+  if (!/^https?:\/\/[^\s]+\.[^\s]+/i.test(url)) throw new LibraryError('Link must be a web address starting with http:// or https://');
+  return {
+    title: requiredText(input.title, 'Title'),
+    author: optionalText(input.author, 200),
+    type: oneOf(input.type, DIGITAL_TYPES, 'Type', 'E-book'),
+    url: url.slice(0, 500),
+    category: optionalText(input.category, 80) || 'General',
+    access: oneOf(input.access, DIGITAL_ACCESS, 'Access', 'Open'),
+    description: optionalText(input.description, 500),
+  };
+}
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const rupees = (n) => `₹${n}`;
 
@@ -211,6 +278,7 @@ export class Library {
       isbn: normalizeIsbn(input.isbn),
       category: optionalText(input.category, 80) || 'General',
       total: positiveInt(input.totalCopies ?? input.total_copies, 'Total copies'),
+      ...bookExtras(input),
     };
   }
   #assertIsbnFree(isbn, exceptId = 0) {
@@ -223,8 +291,8 @@ export class Library {
       const b = this.#bookInput(input);
       this.#assertIsbnFree(b.isbn);
       const { lastInsertRowid } = this.run(
-        'INSERT INTO books (title, author, isbn, category, total_copies, available_copies) VALUES (?, ?, ?, ?, ?, ?)',
-        b.title, b.author, b.isbn, b.category, b.total, b.total);
+        'INSERT INTO books (title, author, isbn, category, total_copies, available_copies, publisher, year, shelf) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        b.title, b.author, b.isbn, b.category, b.total, b.total, b.publisher, b.year, b.shelf);
       return this.getBook(Number(lastInsertRowid));
     });
   }
@@ -243,8 +311,8 @@ export class Library {
           `${held ? ` and ${held} held for pickup` : ''}. The minimum is ${issued + held}.`);
       }
       this.run(
-        'UPDATE books SET title = ?, author = ?, isbn = ?, category = ?, total_copies = ?, available_copies = ? WHERE id = ?',
-        b.title, b.author, b.isbn, b.category, b.total, available, existing.id);
+        'UPDATE books SET title = ?, author = ?, isbn = ?, category = ?, total_copies = ?, available_copies = ?, publisher = ?, year = ?, shelf = ? WHERE id = ?',
+        b.title, b.author, b.isbn, b.category, b.total, available, b.publisher, b.year, b.shelf, existing.id);
       const promoted = this.#drainQueue(existing.id); // extra copies go to anyone waiting first
       return { ...this.getBook(existing.id), promoted };
     });
@@ -307,8 +375,8 @@ export class Library {
           const b = this.#bookInput(row);
           this.#assertIsbnFree(b.isbn);
           this.run(
-            'INSERT INTO books (title, author, isbn, category, total_copies, available_copies) VALUES (?, ?, ?, ?, ?, ?)',
-            b.title, b.author, b.isbn, b.category, b.total, b.total);
+            'INSERT INTO books (title, author, isbn, category, total_copies, available_copies, publisher, year, shelf) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            b.title, b.author, b.isbn, b.category, b.total, b.total, b.publisher, b.year, b.shelf);
           imported.push({ line, title: b.title, isbn: b.isbn });
         } catch (err) {
           if (!(err instanceof LibraryError)) throw err;
@@ -328,6 +396,7 @@ export class Library {
       email: validEmail(input.email),
       joinDate: input.join_date ? parseDate(input.join_date, 'Join date') : this.today(),
       active: input.active === undefined ? true : bool(input.active),
+      ...membershipInput(input),
     };
   }
   #nextMemberCode() {
@@ -343,8 +412,8 @@ export class Library {
       const code = m.code || this.#nextMemberCode();
       if (this.one('SELECT 1 FROM members WHERE member_code = ?', code)) throw conflict(`Member ID ${code} is already in use.`);
       const { lastInsertRowid } = this.run(
-        'INSERT INTO members (member_code, name, phone, email, join_date, active) VALUES (?, ?, ?, ?, ?, ?)',
-        code, m.name, m.phone, m.email, m.joinDate, m.active ? 1 : 0);
+        'INSERT INTO members (member_code, name, phone, email, join_date, active, membership_type, valid_until) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        code, m.name, m.phone, m.email, m.joinDate, m.active ? 1 : 0, m.type, m.validUntil);
       return this.getMember(Number(lastInsertRowid));
     });
   }
@@ -359,8 +428,8 @@ export class Library {
         throw conflict(`Member ID ${code} is already in use.`);
       }
       this.run(
-        'UPDATE members SET member_code = ?, name = ?, phone = ?, email = ?, join_date = ?, active = ? WHERE id = ?',
-        code, m.name, m.phone, m.email, m.joinDate, m.active ? 1 : 0, existing.id);
+        'UPDATE members SET member_code = ?, name = ?, phone = ?, email = ?, join_date = ?, active = ?, membership_type = ?, valid_until = ? WHERE id = ?',
+        code, m.name, m.phone, m.email, m.joinDate, m.active ? 1 : 0, m.type, m.validUntil, existing.id);
       const cancelled = [];
       if (existing.active && !m.active) {
         // An inactive member can't borrow, so their place in any queue (and any held copy) is released.
@@ -437,7 +506,8 @@ export class Library {
       const dueDate = dueOn ? parseDate(dueOn, 'Due date') : addDays(issueDate, RULES.LOAN_DAYS);
       if (dueDate < issueDate) throw new LibraryError('Due date cannot be before the issue date.');
 
-      if (!member.active) throw conflict(`${member.name} is inactive and cannot borrow books.`);
+      const blocked = membershipBlock(member, today);
+      if (blocked) throw conflict(blocked);
       const owed = this.#unpaidFines(member.id);
       if (owed > 0) throw conflict(`${member.name} has unpaid fines of ${rupees(owed)}. The fine must be paid before a new book can be issued.`);
       const holding = this.#activeIssueCount(member.id);
@@ -579,7 +649,8 @@ export class Library {
     return this.tx(() => {
       const member = this.#member(memberId);
       const book = this.#book(bookId);
-      if (!member.active) throw conflict(`${member.name} is inactive and cannot reserve books.`);
+      const blocked = membershipBlock(member, this.today(), 'reserve books');
+      if (blocked) throw conflict(blocked);
       const open = this.one("SELECT * FROM reservations WHERE book_id = ? AND member_id = ? AND status IN ('waiting','ready')", book.id, member.id);
       if (open) {
         throw conflict(open.status === 'ready'
@@ -732,6 +803,172 @@ export class Library {
     return rows;
   }
 
+  // --- memberships -------------------------------------------------------------------------
+  /** Extend a membership by `months` (default 12) from today or from the current expiry, whichever is later. */
+  renewMembership(memberId, { months = 12 } = {}) {
+    return this.tx(() => {
+      const m = this.#member(memberId);
+      const n = positiveInt(months, 'Months');
+      const today = this.today();
+      const from = m.valid_until && m.valid_until > today ? m.valid_until : today;
+      const validUntil = addMonths(from, n);
+      this.run('UPDATE members SET valid_until = ? WHERE id = ?', validUntil, m.id);
+      return { ...this.getMember(m.id), previousValidUntil: m.valid_until };
+    });
+  }
+
+  // --- acquisitions ------------------------------------------------------------------------
+  #acquisition(acqId) {
+    const a = this.one('SELECT * FROM acquisitions WHERE id = ?', id(acqId, 'purchase'));
+    if (!a) throw notFound('Purchase');
+    return a;
+  }
+  listAcquisitions({ status = 'all' } = {}) {
+    return this.tx(() => {
+      if (status !== 'all' && !ACQ_STATUSES.includes(status)) throw new LibraryError(`Status must be one of: all, ${ACQ_STATUSES.join(', ')}.`);
+      return this.q(`SELECT a.*, a.quantity * a.unit_cost AS total_cost FROM acquisitions a
+        ${status === 'all' ? '' : 'WHERE a.status = ?'} ORDER BY a.id DESC`, ...(status === 'all' ? [] : [status]));
+    });
+  }
+  addAcquisition(input) {
+    return this.tx(() => {
+      const a = acquisitionInput(input);
+      const { lastInsertRowid } = this.run(
+        `INSERT INTO acquisitions (title, author, isbn, category, vendor, quantity, unit_cost, notes, status, requested_on)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?)`,
+        a.title, a.author, a.isbn, a.category, a.vendor, a.quantity, a.unitCost, a.notes, this.today());
+      return this.one('SELECT a.*, a.quantity * a.unit_cost AS total_cost FROM acquisitions a WHERE id = ?', Number(lastInsertRowid));
+    });
+  }
+  updateAcquisition(acqId, input) {
+    return this.tx(() => {
+      const ex = this.#acquisition(acqId);
+      if (ex.status === 'received' || ex.status === 'cancelled') throw conflict(`This purchase is already ${ex.status} and can no longer be edited.`);
+      const a = acquisitionInput({ ...ex, ...input });
+      this.run('UPDATE acquisitions SET title=?, author=?, isbn=?, category=?, vendor=?, quantity=?, unit_cost=?, notes=? WHERE id=?',
+        a.title, a.author, a.isbn, a.category, a.vendor, a.quantity, a.unitCost, a.notes, ex.id);
+      return this.one('SELECT a.*, a.quantity * a.unit_cost AS total_cost FROM acquisitions a WHERE id = ?', ex.id);
+    });
+  }
+  orderAcquisition(acqId) {
+    return this.tx(() => {
+      const a = this.#acquisition(acqId);
+      if (a.status !== 'requested') throw conflict(`Only a requested purchase can be ordered (this one is ${a.status}).`);
+      this.run("UPDATE acquisitions SET status = 'ordered', ordered_on = ? WHERE id = ?", this.today(), a.id);
+      return this.one('SELECT a.*, a.quantity * a.unit_cost AS total_cost FROM acquisitions a WHERE id = ?', a.id);
+    });
+  }
+  cancelAcquisition(acqId) {
+    return this.tx(() => {
+      const a = this.#acquisition(acqId);
+      if (a.status === 'received' || a.status === 'cancelled') throw conflict(`This purchase is already ${a.status}.`);
+      this.run("UPDATE acquisitions SET status = 'cancelled' WHERE id = ?", a.id);
+      return this.one('SELECT a.*, a.quantity * a.unit_cost AS total_cost FROM acquisitions a WHERE id = ?', a.id);
+    });
+  }
+  /**
+   * Receive a purchase: the copies join the catalogue. An existing book with the same ISBN gets
+   * extra copies (offered to its reservation queue first); otherwise a new book is created.
+   */
+  receiveAcquisition(acqId) {
+    return this.tx(() => {
+      const a = this.#acquisition(acqId);
+      if (a.status === 'received') throw conflict(`This purchase was already received on ${a.received_on}.`);
+      if (a.status === 'cancelled') throw conflict('This purchase was cancelled and cannot be received.');
+      let book = this.one('SELECT * FROM books WHERE isbn = ? AND deleted = 0', a.isbn);
+      let created = false;
+      let promoted = [];
+      if (book) {
+        this.run('UPDATE books SET total_copies = total_copies + ?, available_copies = available_copies + ? WHERE id = ?', a.quantity, a.quantity, book.id);
+        promoted = this.#drainQueue(book.id);
+      } else {
+        const { lastInsertRowid } = this.run(
+          'INSERT INTO books (title, author, isbn, category, total_copies, available_copies) VALUES (?, ?, ?, ?, ?, ?)',
+          a.title, a.author, a.isbn, a.category, a.quantity, a.quantity);
+        book = { id: Number(lastInsertRowid) };
+        created = true;
+      }
+      this.run("UPDATE acquisitions SET status = 'received', received_on = ?, ordered_on = COALESCE(ordered_on, ?), book_id = ? WHERE id = ?",
+        this.today(), this.today(), book.id, a.id);
+      return {
+        acquisition: this.one('SELECT a.*, a.quantity * a.unit_cost AS total_cost FROM acquisitions a WHERE id = ?', a.id),
+        book: this.getBook(book.id), createdBook: created, promoted,
+      };
+    });
+  }
+
+  // --- digital resources -------------------------------------------------------------------
+  listDigital({ q = '', type = 'all' } = {}) {
+    return this.tx(() => {
+      const where = ['deleted = 0'];
+      const params = [];
+      const term = String(q ?? '').trim();
+      if (term) {
+        const like = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+        where.push("(title LIKE ? ESCAPE '\\' OR author LIKE ? ESCAPE '\\' OR category LIKE ? ESCAPE '\\')");
+        params.push(like, like, like);
+      }
+      if (type !== 'all') { oneOf(type, DIGITAL_TYPES, 'Type'); where.push('type = ?'); params.push(type); }
+      return this.q(`SELECT * FROM digital_resources WHERE ${where.join(' AND ')} ORDER BY title COLLATE NOCASE`, ...params);
+    });
+  }
+  #digital(resId) {
+    const r = this.one('SELECT * FROM digital_resources WHERE id = ? AND deleted = 0', id(resId, 'digital resource'));
+    if (!r) throw notFound('Digital resource');
+    return r;
+  }
+  addDigital(input) {
+    return this.tx(() => {
+      const r = digitalInput(input);
+      const { lastInsertRowid } = this.run(
+        'INSERT INTO digital_resources (title, author, type, url, category, access, description, added_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        r.title, r.author, r.type, r.url, r.category, r.access, r.description, this.today());
+      return this.#digital(Number(lastInsertRowid));
+    });
+  }
+  updateDigital(resId, input) {
+    return this.tx(() => {
+      const ex = this.#digital(resId);
+      const r = digitalInput({ ...ex, ...input });
+      this.run('UPDATE digital_resources SET title=?, author=?, type=?, url=?, category=?, access=?, description=? WHERE id=?',
+        r.title, r.author, r.type, r.url, r.category, r.access, r.description, ex.id);
+      return this.#digital(ex.id);
+    });
+  }
+  deleteDigital(resId) {
+    return this.tx(() => {
+      const r = this.#digital(resId);
+      this.run('UPDATE digital_resources SET deleted = 1 WHERE id = ?', r.id);
+      return { deleted: true, id: r.id, title: r.title };
+    });
+  }
+  /** Records a view and returns the link to open. */
+  openDigital(resId) {
+    return this.tx(() => {
+      const r = this.#digital(resId);
+      this.run('UPDATE digital_resources SET views = views + 1 WHERE id = ?', r.id);
+      return { ...r, views: r.views + 1 };
+    });
+  }
+
+  // --- barcode / RFID scanning ---------------------------------------------------------------
+  /**
+   * Resolves a scanned code (barcode scanners and RFID readers type it like a keyboard):
+   * a member ID (library card) or a book ISBN. For a book, its active loans are included.
+   */
+  scan(code) {
+    return this.tx(() => {
+      const raw = String(code ?? '').trim();
+      if (!raw) throw new LibraryError('Nothing was scanned.');
+      const member = this.one(`${MEMBER_SELECT} WHERE UPPER(m.member_code) = ?`, raw.toUpperCase());
+      if (member) return { kind: 'member', member };
+      const isbn = raw.replace(/[\s-]/g, '').toUpperCase();
+      const book = /^(\d{9}[\dX]|\d{13})$/.test(isbn) ? this.one(`${BOOK_SELECT} WHERE b.isbn = ? AND b.deleted = 0`, isbn) : null;
+      if (book) return { kind: 'book', book, loans: this.#issueRows('i.book_id = ? AND i.returned_on IS NULL', book.id) };
+      return { kind: 'none', code: raw };
+    });
+  }
+
   /** Test/diagnostic helper: true when every book satisfies the copy accounting invariant. */
   checkInvariants() {
     const bad = this.q(
@@ -746,7 +983,7 @@ export class Library {
 }
 
 const BOOK_SELECT = `
-  SELECT b.id, b.title, b.author, b.isbn, b.category, b.total_copies, b.available_copies,
+  SELECT b.id, b.title, b.author, b.isbn, b.category, b.total_copies, b.available_copies, b.publisher, b.year, b.shelf,
          (SELECT COUNT(*) FROM issues i WHERE i.book_id = b.id AND i.returned_on IS NULL) AS issued_copies,
          (SELECT COUNT(*) FROM reservations r WHERE r.book_id = b.id AND r.status = 'ready') AS held_copies,
          (SELECT COUNT(*) FROM reservations r WHERE r.book_id = b.id AND r.status = 'waiting') AS queue_length

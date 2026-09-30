@@ -23,6 +23,7 @@
       <div class="nav-group">Overview</div>
       <a href="#/dashboard" class="nav-item" data-view="dashboard"><span data-icon="grid"></span>Dashboard</a>
       <a href="#/activity" class="nav-item" data-view="activity"><span data-icon="activity"></span>Activity</a>
+      <a href="#/reports" class="nav-item" data-view="reports"><span data-icon="chart"></span>Reports</a>
       <div class="nav-group">Circulation</div>
       <a href="#/issue" class="nav-item" data-view="issue"><span data-icon="arrowOut"></span>Issue Book</a>
       <a href="#/returns" class="nav-item" data-view="returns"><span data-icon="arrowIn"></span>Return Book<span class="nav-badge danger" id="nb-overdue" hidden></span></a>
@@ -30,6 +31,9 @@
       <a href="#/fines" class="nav-item" data-view="fines"><span data-icon="wallet"></span>Fines<span class="nav-badge warn" id="nb-fines" hidden></span></a>
       <div class="nav-group">Catalog</div>
       <a href="#/books" class="nav-item" data-view="books"><span data-icon="book"></span>Books</a>
+      <a href="#/digital" class="nav-item" data-view="digital"><span data-icon="globe"></span>Digital Library</a>
+      <a href="#/acquisitions" class="nav-item" data-view="acquisitions"><span data-icon="cart"></span>Acquisitions</a>
+      <div class="nav-group">People</div>
       <a href="#/members" class="nav-item" data-view="members"><span data-icon="users"></span>Members</a>
     </nav>
     <div class="sidebar-foot">
@@ -77,6 +81,12 @@
 
       <!-- ISSUE BOOK -->
       <section class="view" id="view-issue">
+        <div class="card pad scan-bar">
+          <span class="scan-ico" data-icon="barcode"></span>
+          <div class="scan-text"><b>Scan to issue</b><small>Scan the member's library card, then the book's barcode (barcode scanner or RFID reader). You can also type a member ID or ISBN and press Enter.</small></div>
+          <input id="scan-issue" class="scan-input" placeholder="Scan or type a code…" autocomplete="off" aria-label="Scan member card or book barcode">
+          <div class="scan-status" id="issue-scan-status"></div>
+        </div>
         <div id="circ-issue" class="circ-pane">
           <form id="issue-form" class="issue-layout" autocomplete="off">
             <div class="card pad">
@@ -132,6 +142,11 @@
           <div class="grow"><b>Return a book</b><small>Search by member name, member ID, title or ISBN, then click <b>Return</b>. Late fines are calculated automatically.</small></div>
           <div class="return-stats" id="return-stats"></div>
         </div>
+        <div class="card pad scan-bar">
+          <span class="scan-ico" data-icon="barcode"></span>
+          <div class="scan-text"><b>Scan to return</b><small>Scan the book's barcode to open its return straight away, or scan a member card to list their loans.</small></div>
+          <input id="scan-return" class="scan-input" placeholder="Scan or type a code…" autocomplete="off" aria-label="Scan book barcode or member card">
+        </div>
         <div id="circ-return" class="circ-pane">
           <div class="card">
             <div class="card-toolbar">
@@ -172,6 +187,11 @@
 
       <!-- FINES -->
       <section class="view" id="view-fines"></section>
+
+      <!-- DIGITAL LIBRARY / ACQUISITIONS / REPORTS -->
+      <section class="view" id="view-digital"></section>
+      <section class="view" id="view-acquisitions"></section>
+      <section class="view" id="view-reports"></section>
 
       <!-- BOOKS -->
       <section class="view" id="view-books">
@@ -216,6 +236,7 @@
             <div class="segmented" id="member-filter">
               <button data-v="all">All</button>
               <button data-v="active">Active</button>
+              <button data-v="expired">Expired</button>
               <button data-v="inactive">Inactive</button>
               <button data-v="fines">With fines</button>
               <button data-v="borrowing">Borrowing</button>
@@ -271,7 +292,9 @@
 <div id="chart-tip" class="chart-tip" hidden></div>
 <div id="toasts" aria-live="polite"></div>
 <div id="print-area" aria-hidden="true"></div>
+<script src="barcode.js"></script>
 <script src="app.js"></script>
 <script src="assistant.js"></script>
+<script src="modules.js"></script>
 </body>
 </html>

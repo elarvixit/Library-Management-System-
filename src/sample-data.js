@@ -61,6 +61,33 @@ export const SAMPLE_MEMBERS = [
 
 export const emailFor = (name) => `${name.toLowerCase().replace(/[^a-z ]/g, '').trim().replace(/\s+/g, '.')}@example.com`;
 
+// Membership plans for some sample members: [member name, type, months until expiry (negative = expired)]
+export const SAMPLE_MEMBERSHIPS = [
+  ['Priya Sharma', 'Student', 8], ['Rahul Verma', 'Student', 5], ['Ananya Gupta', 'Student', 10], ['Karthik Nair', 'Faculty', 20],
+  ['Divya Menon', 'Faculty', 14], ['Lakshmi Srinivasan', 'Senior', 12], ['Suresh Babu', 'Senior', 9], ['Yash Chauhan', 'Student', -1],
+];
+
+// Purchases: [title, author, isbn, category, vendor, quantity, cost per copy, final status]
+export const SAMPLE_ACQUISITIONS = [
+  ['Harry Potter and the Chamber of Secrets', 'J.K. Rowling', '9780747538493', 'Children', 'Sapna Book House', 3, 399, 'requested'],
+  ['Clean Architecture', 'Robert C. Martin', '9780134494166', 'Technology', 'Amazon Business', 1, 2450, 'ordered'],
+  ['Let Us C', 'Yashavant Kanetkar', '9789388511391', 'Technology', 'Higginbothams', 2, 350, 'ordered'],
+  ['The Alchemist', 'Paulo Coelho', '9780062315007', 'Fiction', 'Sapna Book House', 2, 299, 'received'],
+];
+
+// Free, public digital resources: [title, author, type, url, category, access, description]
+export const SAMPLE_DIGITAL = [
+  ['Pride and Prejudice (e-book)', 'Jane Austen', 'E-book', 'https://www.gutenberg.org/ebooks/1342', 'Classics', 'Open', 'Free public-domain edition from Project Gutenberg.'],
+  ['The Adventures of Sherlock Holmes', 'Arthur Conan Doyle', 'E-book', 'https://www.gutenberg.org/ebooks/1661', 'Fiction', 'Open', 'Twelve classic detective stories.'],
+  ['LibriVox Audiobooks', 'LibriVox volunteers', 'Audiobook', 'https://librivox.org/', 'Fiction', 'Open', 'Free public-domain audiobooks read by volunteers.'],
+  ['National Digital Library of India', 'IIT Kharagpur', 'Database', 'https://ndl.iitkgp.ac.in/', 'Reference', 'Members only', 'Millions of books, papers and lectures for Indian students.'],
+  ['NCERT Textbooks', 'NCERT', 'Database', 'https://ncert.nic.in/textbook.php', 'Education', 'Open', 'Official school textbooks, classes 1–12.'],
+  ['arXiv — Computer Science', 'Cornell University', 'Journal', 'https://arxiv.org/list/cs/recent', 'Technology', 'Members only', 'Latest open-access research papers in computer science.'],
+  ['Khan Academy — Computing', 'Khan Academy', 'Video', 'https://www.khanacademy.org/computing', 'Technology', 'Open', 'Free video lessons on programming and computer science.'],
+  ['MDN Web Docs', 'Mozilla', 'Website', 'https://developer.mozilla.org/', 'Technology', 'Open', 'Reference for HTML, CSS and JavaScript.'],
+  ['Wikipedia', 'Wikimedia Foundation', 'Website', 'https://www.wikipedia.org/', 'Reference', 'Open', 'The free encyclopedia.'],
+];
+
 // [title, author, isbn, category, total copies]
 export const SAMPLE_BOOKS = [
   ['The Hobbit', 'J.R.R. Tolkien', '9780261102217', 'Fantasy', 3],

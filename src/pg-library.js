@@ -7,7 +7,8 @@
 import pg from 'pg';
 import {
   RULES, LibraryError, addDays, daysBetween, computeFine, parseDate, requiredText, optionalText,
-  positiveInt, normalizeIsbn, validEmail, validPhone, bool,
+  positiveInt, normalizeIsbn, validEmail, validPhone, bool, bookExtras, membershipInput, acquisitionInput, digitalInput,
+  addMonths, ACQ_STATUSES, DIGITAL_TYPES,
 } from './library.js';
 
 // Return DATE columns as 'YYYY-MM-DD' strings and counts/sums as numbers (not strings).
@@ -173,6 +174,7 @@ export class PgLibrary {
       isbn: normalizeIsbn(input.isbn),
       category: optionalText(input.category, 80) || 'General',
       total: positiveInt(input.totalCopies ?? input.total_copies, 'Total copies'),
+      ...bookExtras(input),
     };
   }
   async #assertIsbnFree(t, isbn, exceptId = 0) {
@@ -213,8 +215,8 @@ export class PgLibrary {
       const b = this.#bookInput(input);
       await this.#assertIsbnFree(t, b.isbn);
       const { id: newId } = await t.one(
-        `insert into books (title, author, isbn, category, total_copies, available_copies) values ($1,$2,$3,$4,$5,$5) returning id`,
-        [b.title, b.author, b.isbn, b.category, b.total]);
+        `insert into books (title, author, isbn, category, total_copies, available_copies, publisher, year, shelf) values ($1,$2,$3,$4,$5,$5,$6,$7,$8) returning id`,
+        [b.title, b.author, b.isbn, b.category, b.total, b.publisher, b.year, b.shelf]);
       return this.#book(t, newId);
     });
   }
@@ -232,8 +234,8 @@ export class PgLibrary {
           + `${held ? ` and ${held} held for pickup` : ''}. The minimum is ${issued + held}.`);
       }
       const before = await this.#readyIds(t, existing.id);
-      await t.q('update books set title=$1, author=$2, isbn=$3, category=$4, total_copies=$5, available_copies=$6 where id=$7',
-        [b.title, b.author, b.isbn, b.category, b.total, available, existing.id]);
+      await t.q('update books set title=$1, author=$2, isbn=$3, category=$4, total_copies=$5, available_copies=$6, publisher=$7, year=$8, shelf=$9 where id=$10',
+        [b.title, b.author, b.isbn, b.category, b.total, available, b.publisher, b.year, b.shelf, existing.id]);
       await t.q('select _drain_queue($1)', [existing.id]); // extra copies go to anyone waiting first
       const promoted = await this.#promotedSince(t, existing.id, before);
       return { ...(await this.#book(t, existing.id)), promoted };
@@ -258,8 +260,8 @@ export class PgLibrary {
           await this.#assertIsbnFree(t, b.isbn);
           await t.q('savepoint row_import');
           try {
-            await t.q('insert into books (title, author, isbn, category, total_copies, available_copies) values ($1,$2,$3,$4,$5,$5)',
-              [b.title, b.author, b.isbn, b.category, b.total]);
+            await t.q('insert into books (title, author, isbn, category, total_copies, available_copies, publisher, year, shelf) values ($1,$2,$3,$4,$5,$5,$6,$7,$8)',
+              [b.title, b.author, b.isbn, b.category, b.total, b.publisher, b.year, b.shelf]);
             await t.q('release savepoint row_import');
           } catch (err) {
             await t.q('rollback to savepoint row_import');
@@ -284,6 +286,7 @@ export class PgLibrary {
       email: validEmail(input.email),
       joinDate: input.join_date ? parseDate(String(input.join_date).slice(0, 10), 'Join date') : today,
       active: input.active === undefined ? true : bool(input.active),
+      ...membershipInput(input),
     };
     if (m.joinDate > today) throw new LibraryError('Join date cannot be in the future.');
     return m;
@@ -327,8 +330,8 @@ export class PgLibrary {
       }
       if (await t.one('select 1 from members where member_code = $1', [code])) throw conflict(`Member ID ${code} is already in use.`);
       const { id: newId } = await t.one(
-        'insert into members (member_code, name, phone, email, join_date, active) values ($1,$2,$3,$4,$5,$6) returning id',
-        [code, m.name, m.phone, m.email, m.joinDate, m.active]);
+        'insert into members (member_code, name, phone, email, join_date, active, membership_type, valid_until) values ($1,$2,$3,$4,$5,$6,$7,$8) returning id',
+        [code, m.name, m.phone, m.email, m.joinDate, m.active, m.type, m.validUntil]);
       return this.#member(t, newId);
     });
   }
@@ -341,8 +344,8 @@ export class PgLibrary {
       if (await t.one('select 1 from members where member_code = $1 and id <> $2', [code, existing.id])) {
         throw conflict(`Member ID ${code} is already in use.`);
       }
-      await t.q('update members set member_code=$1, name=$2, phone=$3, email=$4, join_date=$5, active=$6 where id=$7',
-        [code, m.name, m.phone, m.email, m.joinDate, m.active, existing.id]);
+      await t.q('update members set member_code=$1, name=$2, phone=$3, email=$4, join_date=$5, active=$6, membership_type=$7, valid_until=$8 where id=$9',
+        [code, m.name, m.phone, m.email, m.joinDate, m.active, m.type, m.validUntil, existing.id]);
       let cancelled = 0;
       if (existing.active && !m.active) {
         // An inactive member can't borrow: release their queue places and any held copy.
@@ -448,6 +451,155 @@ export class PgLibrary {
       }[status];
       if (!where) throw new LibraryError('Status must be one of: open, waiting, ready, closed, all.');
       return this.#reservationRows(t, where);
+    });
+  }
+
+  // ---------------------------------------------------------------- memberships
+  renewMembership(memberId, { months = 12 } = {}) {
+    return this.tx(async (t) => {
+      const m = await this.#member(t, memberId);
+      const n = positiveInt(months, 'Months');
+      const from = m.valid_until && m.valid_until > t.today ? m.valid_until : t.today;
+      await t.q('update members set valid_until = $1 where id = $2', [addMonths(from, n), m.id]);
+      return { ...(await this.#member(t, m.id)), previousValidUntil: m.valid_until };
+    });
+  }
+
+  // ---------------------------------------------------------------- acquisitions
+  async #acq(t, acqId) {
+    const a = await t.one('select a.*, a.quantity * a.unit_cost as total_cost from acquisitions a where id = $1', [id(acqId, 'purchase')]);
+    if (!a) throw notFound('Purchase');
+    return a;
+  }
+  listAcquisitions({ status = 'all' } = {}) {
+    return this.tx((t) => {
+      if (status !== 'all' && !ACQ_STATUSES.includes(status)) throw new LibraryError(`Status must be one of: all, ${ACQ_STATUSES.join(', ')}.`);
+      return t.q(`select a.*, a.quantity * a.unit_cost as total_cost from acquisitions a ${status === 'all' ? '' : 'where a.status = $1'} order by a.id desc`,
+        status === 'all' ? [] : [status]);
+    });
+  }
+  addAcquisition(input) {
+    return this.tx(async (t) => {
+      const a = acquisitionInput(input);
+      const { id: newId } = await t.one(
+        `insert into acquisitions (title, author, isbn, category, vendor, quantity, unit_cost, notes, status, requested_on)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,'requested',$9) returning id`,
+        [a.title, a.author, a.isbn, a.category, a.vendor, a.quantity, a.unitCost, a.notes, t.today]);
+      return this.#acq(t, newId);
+    });
+  }
+  updateAcquisition(acqId, input) {
+    return this.tx(async (t) => {
+      const ex = await this.#acq(t, acqId);
+      if (ex.status === 'received' || ex.status === 'cancelled') throw conflict(`This purchase is already ${ex.status} and can no longer be edited.`);
+      const a = acquisitionInput({ ...ex, ...input });
+      await t.q('update acquisitions set title=$1, author=$2, isbn=$3, category=$4, vendor=$5, quantity=$6, unit_cost=$7, notes=$8 where id=$9',
+        [a.title, a.author, a.isbn, a.category, a.vendor, a.quantity, a.unitCost, a.notes, ex.id]);
+      return this.#acq(t, ex.id);
+    });
+  }
+  orderAcquisition(acqId) {
+    return this.tx(async (t) => {
+      const a = await this.#acq(t, acqId);
+      if (a.status !== 'requested') throw conflict(`Only a requested purchase can be ordered (this one is ${a.status}).`);
+      await t.q("update acquisitions set status = 'ordered', ordered_on = current_date where id = $1", [a.id]);
+      return this.#acq(t, a.id);
+    });
+  }
+  cancelAcquisition(acqId) {
+    return this.tx(async (t) => {
+      const a = await this.#acq(t, acqId);
+      if (a.status === 'received' || a.status === 'cancelled') throw conflict(`This purchase is already ${a.status}.`);
+      await t.q("update acquisitions set status = 'cancelled' where id = $1", [a.id]);
+      return this.#acq(t, a.id);
+    });
+  }
+  receiveAcquisition(acqId) {
+    return this.tx(async (t) => {
+      const a = await this.#acq(t, acqId);
+      if (a.status === 'received') throw conflict(`This purchase was already received on ${a.received_on}.`);
+      if (a.status === 'cancelled') throw conflict('This purchase was cancelled and cannot be received.');
+      let book = await t.one('select * from books where isbn = $1 and not deleted for update', [a.isbn]);
+      let created = false;
+      let promoted = [];
+      if (book) {
+        const before = await this.#readyIds(t, book.id);
+        await t.q('update books set total_copies = total_copies + $1, available_copies = available_copies + $1 where id = $2', [a.quantity, book.id]);
+        await t.q('select _drain_queue($1)', [book.id]);
+        promoted = await this.#promotedSince(t, book.id, before);
+      } else {
+        book = await t.one('insert into books (title, author, isbn, category, total_copies, available_copies) values ($1,$2,$3,$4,$5,$5) returning id',
+          [a.title, a.author, a.isbn, a.category, a.quantity]);
+        created = true;
+      }
+      await t.q("update acquisitions set status = 'received', received_on = current_date, ordered_on = coalesce(ordered_on, current_date), book_id = $1 where id = $2", [book.id, a.id]);
+      return { acquisition: await this.#acq(t, a.id), book: await this.#book(t, book.id), createdBook: created, promoted };
+    });
+  }
+
+  // ---------------------------------------------------------------- digital resources
+  async #digital(t, resId) {
+    const r = await t.one('select * from digital_resources where id = $1 and not deleted', [id(resId, 'digital resource')]);
+    if (!r) throw notFound('Digital resource');
+    return r;
+  }
+  listDigital({ q = '', type = 'all' } = {}) {
+    return this.tx((t) => {
+      const where = ['not deleted'];
+      const params = [];
+      const term = String(q ?? '').trim();
+      if (term) { params.push(`%${esc(term)}%`); where.push('(title ilike $1 or author ilike $1 or category ilike $1)'); }
+      if (type !== 'all') {
+        if (!DIGITAL_TYPES.includes(type)) throw new LibraryError(`Type must be one of: ${DIGITAL_TYPES.join(', ')}.`);
+        params.push(type); where.push(`type = $${params.length}`);
+      }
+      return t.q(`select * from digital_resources where ${where.join(' and ')} order by lower(title)`, params);
+    });
+  }
+  addDigital(input) {
+    return this.tx(async (t) => {
+      const r = digitalInput(input);
+      const { id: newId } = await t.one(
+        'insert into digital_resources (title, author, type, url, category, access, description, added_on) values ($1,$2,$3,$4,$5,$6,$7,$8) returning id',
+        [r.title, r.author, r.type, r.url, r.category, r.access, r.description, t.today]);
+      return this.#digital(t, newId);
+    });
+  }
+  updateDigital(resId, input) {
+    return this.tx(async (t) => {
+      const ex = await this.#digital(t, resId);
+      const r = digitalInput({ ...ex, ...input });
+      await t.q('update digital_resources set title=$1, author=$2, type=$3, url=$4, category=$5, access=$6, description=$7 where id=$8',
+        [r.title, r.author, r.type, r.url, r.category, r.access, r.description, ex.id]);
+      return this.#digital(t, ex.id);
+    });
+  }
+  deleteDigital(resId) {
+    return this.tx(async (t) => {
+      const r = await this.#digital(t, resId);
+      await t.q('update digital_resources set deleted = true where id = $1', [r.id]);
+      return { deleted: true, id: r.id, title: r.title };
+    });
+  }
+  openDigital(resId) {
+    return this.tx(async (t) => {
+      const r = await this.#digital(t, resId);
+      await t.q('update digital_resources set views = views + 1 where id = $1', [r.id]);
+      return { ...r, views: r.views + 1 };
+    });
+  }
+
+  // ---------------------------------------------------------------- barcode / RFID scanning
+  scan(code) {
+    return this.tx(async (t) => {
+      const raw = String(code ?? '').trim();
+      if (!raw) throw new LibraryError('Nothing was scanned.');
+      const member = await t.one(`${MEMBER_SELECT} where upper(m.member_code) = $1`, [raw.toUpperCase()]);
+      if (member) return { kind: 'member', member };
+      const isbn = raw.replace(/[\s-]/g, '').toUpperCase();
+      const book = /^(\d{9}[\dX]|\d{13})$/.test(isbn) ? await t.one(`${BOOK_SELECT} where b.isbn = $1`, [isbn]) : null;
+      if (book) return { kind: 'book', book, loans: await this.#issueRows(t, 'i.book_id = $1 and i.returned_on is null', [book.id]) };
+      return { kind: 'none', code: raw };
     });
   }
 

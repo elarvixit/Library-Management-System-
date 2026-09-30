@@ -1,4 +1,62 @@
 -- =====================================================================
+-- Library Management System — UPGRADE an existing Supabase database
+-- Adds: catalogue details (publisher, year, shelf), membership plans & expiry,
+--       acquisitions, digital resources, and the updated rule functions.
+-- SAFE: it does NOT delete any data. Run it once in Supabase → SQL Editor → Run.
+-- (For a brand-new database use setup.sql instead.)
+-- =====================================================================
+
+alter table books   add column if not exists publisher text not null default '';
+alter table books   add column if not exists year integer check (year is null or year between 1000 and 2100);
+alter table books   add column if not exists shelf text not null default '';
+alter table members add column if not exists membership_type text not null default 'General'
+  check (membership_type in ('General', 'Student', 'Faculty', 'Senior'));
+alter table members add column if not exists valid_until date;
+
+-- ---------------------------------------------------------------------
+-- acquisitions: buying new titles or extra copies.
+-- status: requested -> ordered -> received (or cancelled). Receiving adds the copies to books.
+-- ---------------------------------------------------------------------
+create table if not exists acquisitions (
+  id           bigint generated always as identity primary key,
+  title        text    not null check (length(trim(title)) > 0),
+  author       text    not null,
+  isbn         text    not null check (isbn ~ '^([0-9]{9}[0-9X]|[0-9]{13})$'),
+  category     text    not null default 'General',
+  vendor       text    not null default '',
+  quantity     integer not null check (quantity >= 1),
+  unit_cost    integer not null default 0 check (unit_cost >= 0),   -- rupees per copy
+  status       text    not null default 'requested' check (status in ('requested', 'ordered', 'received', 'cancelled')),
+  requested_on date    not null default current_date,
+  ordered_on   date,
+  received_on  date,
+  notes        text    not null default '',
+  book_id      bigint references books (id)
+);
+
+-- ---------------------------------------------------------------------
+-- digital_resources: e-books, journals, audiobooks, videos, websites, databases
+-- ---------------------------------------------------------------------
+create table if not exists digital_resources (
+  id          bigint generated always as identity primary key,
+  title       text    not null check (length(trim(title)) > 0),
+  author      text    not null default '',
+  type        text    not null default 'E-book' check (type in ('E-book', 'Journal', 'Audiobook', 'Video', 'Website', 'Database')),
+  url         text    not null check (url ~* '^https?://'),
+  category    text    not null default 'General',
+  access      text    not null default 'Open' check (access in ('Open', 'Members only')),
+  description text    not null default '',
+  added_on    date    not null default current_date,
+  views       integer not null default 0,
+  deleted     boolean not null default false
+);
+alter table acquisitions      enable row level security;
+alter table digital_resources enable row level security;
+
+-- ---------------------------------------------------------------------
+-- Updated functions and views (same as functions.sql)
+-- ---------------------------------------------------------------------
+-- =====================================================================
 -- Library Management System — business rules as PostgreSQL functions + views
 -- Run AFTER schema.sql (before or after seed.sql). Safe to re-run.
 --

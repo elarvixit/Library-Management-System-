@@ -139,6 +139,37 @@ join books b on b.isbn = x.isbn
 join members m on m.member_code = x.code
 order by x.ord;  -- ids (= queue order) follow this order
 
+-- Membership plans (one Student membership expired last month, to show the rule)
+update members set membership_type = 'Student', valid_until = (current_date + interval '8 months')::date where name = 'Priya Sharma';
+update members set membership_type = 'Student', valid_until = (current_date + interval '5 months')::date where name = 'Rahul Verma';
+update members set membership_type = 'Student', valid_until = (current_date + interval '10 months')::date where name = 'Ananya Gupta';
+update members set membership_type = 'Faculty', valid_until = (current_date + interval '20 months')::date where name = 'Karthik Nair';
+update members set membership_type = 'Faculty', valid_until = (current_date + interval '14 months')::date where name = 'Divya Menon';
+update members set membership_type = 'Senior', valid_until = (current_date + interval '12 months')::date where name = 'Lakshmi Srinivasan';
+update members set membership_type = 'Senior', valid_until = (current_date + interval '9 months')::date where name = 'Suresh Babu';
+update members set membership_type = 'Student', valid_until = (current_date + interval '-1 months')::date where name = 'Yash Chauhan';
+
+-- Acquisitions at every stage; the received one added 2 copies of The Alchemist
+insert into acquisitions (title, author, isbn, category, vendor, quantity, unit_cost, status, requested_on, ordered_on, received_on) values
+  ('Harry Potter and the Chamber of Secrets', 'J.K. Rowling', '9780747538493', 'Children', 'Sapna Book House', 3, 399, 'requested', current_date - 6, null, null),
+  ('Clean Architecture', 'Robert C. Martin', '9780134494166', 'Technology', 'Amazon Business', 1, 2450, 'ordered', current_date - 6, current_date - 4, null),
+  ('Let Us C', 'Yashavant Kanetkar', '9789388511391', 'Technology', 'Higginbothams', 2, 350, 'ordered', current_date - 6, current_date - 4, null),
+  ('The Alchemist', 'Paulo Coelho', '9780062315007', 'Fiction', 'Sapna Book House', 2, 299, 'received', current_date - 6, current_date - 4, current_date - 1);
+update books set total_copies = total_copies + 2 where isbn = '9780062315007';
+update acquisitions set book_id = (select id from books where isbn = '9780062315007') where isbn = '9780062315007' and status = 'received';
+
+-- Free, public digital resources
+insert into digital_resources (title, author, type, url, category, access, description, views) values
+  ('Pride and Prejudice (e-book)', 'Jane Austen', 'E-book', 'https://www.gutenberg.org/ebooks/1342', 'Classics', 'Open', 'Free public-domain edition from Project Gutenberg.', 18),
+  ('The Adventures of Sherlock Holmes', 'Arthur Conan Doyle', 'E-book', 'https://www.gutenberg.org/ebooks/1661', 'Fiction', 'Open', 'Twelve classic detective stories.', 16),
+  ('LibriVox Audiobooks', 'LibriVox volunteers', 'Audiobook', 'https://librivox.org/', 'Fiction', 'Open', 'Free public-domain audiobooks read by volunteers.', 14),
+  ('National Digital Library of India', 'IIT Kharagpur', 'Database', 'https://ndl.iitkgp.ac.in/', 'Reference', 'Members only', 'Millions of books, papers and lectures for Indian students.', 12),
+  ('NCERT Textbooks', 'NCERT', 'Database', 'https://ncert.nic.in/textbook.php', 'Education', 'Open', 'Official school textbooks, classes 1–12.', 10),
+  ('arXiv — Computer Science', 'Cornell University', 'Journal', 'https://arxiv.org/list/cs/recent', 'Technology', 'Members only', 'Latest open-access research papers in computer science.', 8),
+  ('Khan Academy — Computing', 'Khan Academy', 'Video', 'https://www.khanacademy.org/computing', 'Technology', 'Open', 'Free video lessons on programming and computer science.', 6),
+  ('MDN Web Docs', 'Mozilla', 'Website', 'https://developer.mozilla.org/', 'Technology', 'Open', 'Reference for HTML, CSS and JavaScript.', 4),
+  ('Wikipedia', 'Wikimedia Foundation', 'Website', 'https://www.wikipedia.org/', 'Reference', 'Open', 'The free encyclopedia.', 2);
+
 -- available = total − copies on loan − copies held for pickup
 update books b set available_copies = b.total_copies
   - (select count(*) from issues i where i.book_id = b.id and i.returned_on is null)

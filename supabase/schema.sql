@@ -4,6 +4,8 @@
 -- Safe to re-run: it drops and recreates the four tables.
 -- =====================================================================
 
+drop table if exists digital_resources cascade;
+drop table if exists acquisitions cascade;
 drop table if exists reservations cascade;
 drop table if exists issues cascade;
 drop table if exists members cascade;
@@ -24,6 +26,9 @@ create table books (
   total_copies     integer not null check (total_copies >= 1),
   available_copies integer not null check (available_copies >= 0 and available_copies <= total_copies),
   deleted          boolean not null default false,   -- soft delete keeps loan & fine history
+  publisher        text    not null default '',
+  year             integer check (year is null or year between 1000 and 2100),
+  shelf            text    not null default '',       -- rack / shelf location, e.g. A-3
   created_at       timestamptz not null default now()
 );
 -- ISBN must be unique among books that are not deleted
@@ -42,7 +47,9 @@ create table members (
   phone       text    not null default '',
   email       text    not null default '' check (email = '' or email ~* '^[^\s@]+@[^\s@]+\.[^\s@]+$'),
   join_date   date    not null default current_date,
-  active      boolean not null default true
+  active      boolean not null default true,
+  membership_type text not null default 'General' check (membership_type in ('General', 'Student', 'Faculty', 'Senior')),
+  valid_until date                                  -- membership expiry (null = never expires)
 );
 create index ix_members_name on members (lower(name));
 
@@ -94,6 +101,46 @@ create table reservations (
 create index ix_res_book on reservations (book_id, status);
 -- At most one open reservation per member per book
 create unique index ux_res_open on reservations (book_id, member_id) where status in ('waiting', 'ready');
+
+-- ---------------------------------------------------------------------
+-- acquisitions: buying new titles or extra copies.
+-- status: requested -> ordered -> received (or cancelled). Receiving adds the copies to books.
+-- ---------------------------------------------------------------------
+create table if not exists acquisitions (
+  id           bigint generated always as identity primary key,
+  title        text    not null check (length(trim(title)) > 0),
+  author       text    not null,
+  isbn         text    not null check (isbn ~ '^([0-9]{9}[0-9X]|[0-9]{13})$'),
+  category     text    not null default 'General',
+  vendor       text    not null default '',
+  quantity     integer not null check (quantity >= 1),
+  unit_cost    integer not null default 0 check (unit_cost >= 0),   -- rupees per copy
+  status       text    not null default 'requested' check (status in ('requested', 'ordered', 'received', 'cancelled')),
+  requested_on date    not null default current_date,
+  ordered_on   date,
+  received_on  date,
+  notes        text    not null default '',
+  book_id      bigint references books (id)
+);
+
+-- ---------------------------------------------------------------------
+-- digital_resources: e-books, journals, audiobooks, videos, websites, databases
+-- ---------------------------------------------------------------------
+create table if not exists digital_resources (
+  id          bigint generated always as identity primary key,
+  title       text    not null check (length(trim(title)) > 0),
+  author      text    not null default '',
+  type        text    not null default 'E-book' check (type in ('E-book', 'Journal', 'Audiobook', 'Video', 'Website', 'Database')),
+  url         text    not null check (url ~* '^https?://'),
+  category    text    not null default 'General',
+  access      text    not null default 'Open' check (access in ('Open', 'Members only')),
+  description text    not null default '',
+  added_on    date    not null default current_date,
+  views       integer not null default 0,
+  deleted     boolean not null default false
+);
+alter table acquisitions      enable row level security;
+alter table digital_resources enable row level security;
 
 -- ---------------------------------------------------------------------
 -- Security: turn on Row Level Security with NO public policies.

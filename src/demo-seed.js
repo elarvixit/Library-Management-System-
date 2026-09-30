@@ -1,8 +1,8 @@
 // Fills an EMPTY database with demo data that exercises every dashboard panel:
 // overdue loans, a paid-off and an unpaid fine, a reservation queue and a copy ready for pickup.
 // Used by `npm run seed` and automatically on Vercel (where the database starts empty).
-import { Library, addDays, localToday } from './library.js';
-import { SAMPLE_MEMBERS, SAMPLE_BOOKS, emailFor } from './sample-data.js';
+import { Library, addDays, addMonths, localToday } from './library.js';
+import { SAMPLE_MEMBERS, SAMPLE_BOOKS, SAMPLE_MEMBERSHIPS, SAMPLE_ACQUISITIONS, SAMPLE_DIGITAL, emailFor } from './sample-data.js';
 
 /** Returns false (and does nothing) if the database already has books. */
 export function seedDemo(db) {
@@ -49,5 +49,25 @@ export function seedDemo(db) {
   lib.issueBook({ memberId: extra[0].id, bookId: book('Clean Code').id });
   lib.issueBook({ memberId: extra[1].id, bookId: book('Wings of Fire').id });
   lib.issueBook({ memberId: extra[2].id, bookId: book('The God of Small Things').id });
+
+  // Membership plans (one Student membership expired last month, to show the rule).
+  for (const [name, type, months] of SAMPLE_MEMBERSHIPS) {
+    const mem = extra.find((x) => x.name === name);
+    if (mem) lib.updateMember(mem.id, { membership_type: type, valid_until: addMonths(today, months) });
+  }
+  // Acquisitions at every stage (receiving The Alchemist adds 2 copies to the catalogue).
+  clock = addDays(today, -6);
+  const acqs = SAMPLE_ACQUISITIONS.map(([title, author, isbn, category, vendor, quantity, unit_cost, status]) =>
+    [lib.addAcquisition({ title, author, isbn, category, vendor, quantity, unit_cost }), status]);
+  clock = addDays(today, -4);
+  for (const [a, status] of acqs) if (status === 'ordered' || status === 'received') lib.orderAcquisition(a.id);
+  clock = addDays(today, -1);
+  for (const [a, status] of acqs) if (status === 'received') lib.receiveAcquisition(a.id);
+  clock = today;
+  // Digital resources, with some views
+  SAMPLE_DIGITAL.forEach(([title, author, type, url, category, access, description], i) => {
+    const d = lib.addDigital({ title, author, type, url, category, access, description });
+    for (let v = 0; v < (SAMPLE_DIGITAL.length - i) * 2; v++) lib.openDigital(d.id);
+  });
   return true;
 }

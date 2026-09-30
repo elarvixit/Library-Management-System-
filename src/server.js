@@ -5,6 +5,7 @@ import { openDb } from './db.js';
 import { Library, LibraryError } from './library.js';
 import { parseBooksCsv, toCsv } from './csv.js';
 import { seedDemo } from './demo-seed.js';
+import { buildReport, REPORTS } from './reports.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -76,6 +77,37 @@ export function createApp(lib) {
   app.post('/api/members', h((req) => lib.addMember(req.body ?? {}), 201));
   app.put('/api/members/:id', h((req) => lib.updateMember(req.params.id, req.body ?? {})));
   app.post('/api/members/:id/pay-fine', h((req) => lib.payFines(req.params.id)));
+  app.post('/api/members/:id/renew-membership', h((req) => lib.renewMembership(req.params.id, req.body ?? {})));
+
+  // Acquisitions (purchase requests -> ordered -> received into the catalogue)
+  app.get('/api/acquisitions', h((req) => lib.listAcquisitions({ status: req.query.status || 'all' })));
+  app.post('/api/acquisitions', h((req) => lib.addAcquisition(req.body ?? {}), 201));
+  app.put('/api/acquisitions/:id', h((req) => lib.updateAcquisition(req.params.id, req.body ?? {})));
+  app.post('/api/acquisitions/:id/order', h((req) => lib.orderAcquisition(req.params.id)));
+  app.post('/api/acquisitions/:id/receive', h((req) => lib.receiveAcquisition(req.params.id)));
+  app.post('/api/acquisitions/:id/cancel', h((req) => lib.cancelAcquisition(req.params.id)));
+
+  // Digital resources
+  app.get('/api/digital', h((req) => lib.listDigital({ q: req.query.q, type: req.query.type || 'all' })));
+  app.post('/api/digital', h((req) => lib.addDigital(req.body ?? {}), 201));
+  app.put('/api/digital/:id', h((req) => lib.updateDigital(req.params.id, req.body ?? {})));
+  app.delete('/api/digital/:id', h((req) => lib.deleteDigital(req.params.id)));
+  app.post('/api/digital/:id/open', h((req) => lib.openDigital(req.params.id)));
+
+  // Barcode / RFID: resolve a scanned code to a member card or a book
+  app.get('/api/scan', h((req) => lib.scan(req.query.code)));
+
+  // Reports (JSON for the Reports page, CSV for download)
+  app.get('/api/report-types', h(() => Object.entries(REPORTS).map(([name, title]) => ({ name, title }))));
+  app.get('/api/report/:name.csv', async (req, res) => {
+    try {
+      const r = await buildReport(lib, req.params.name, req.query);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${r.name}-${r.period.from}-to-${r.period.to}.csv"`);
+      res.send(`\uFEFF${toCsv(r.columns.map((c) => c.label), r.rows.map((row) => r.columns.map((c) => row[c.key])))}`);
+    } catch (err) { fail(res, err); }
+  });
+  app.get('/api/report/:name', h((req) => buildReport(lib, req.params.name, req.query)));
 
   // Issues & returns
   app.get('/api/issues', h((req) => lib.listIssues({ status: req.query.status || 'active' })));

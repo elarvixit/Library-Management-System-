@@ -33,6 +33,21 @@ The database is stored in `data/library.db`. Set `DB_FILE` to use a different fi
 | ⭐ Export the overdue list to CSV | Dashboard → *Export CSV* |
 | ⭐ Bulk-import books from CSV (preview first, per-row error report, downloadable template) | Books → *Import CSV* (see `sample-data/books.csv`) |
 
+### Library modules
+
+| Module | What it does | Where |
+|---|---|---|
+| **Book / catalog management** | Title, author, ISBN, category, copies, plus **publisher, year and shelf/rack location**. Search, CSV import/export, loan history per book | **Books** |
+| **Acquisition** | Purchase requests → **ordered** from a vendor → **received**. Receiving adds the copies to the catalogue (a new book, or extra copies of an existing ISBN, offered to its reservation queue first). Cost per copy and spending are tracked | **Acquisitions** |
+| **Memberships** | Plans (**General, Student, Faculty, Senior**) with a **valid-until** date. An expired membership blocks issuing and reserving until it is renewed (6 months to 3 years) | **Members** |
+| **Issue / return** | Rule checklist, loan slip, late-fine receipt | **Issue Book**, **Return Book** |
+| **Renewals** | Up to 2 per loan. Refused when overdue, when fines are unpaid, or when someone is waiting | **Return Book** |
+| **Fines** | ₹5/day, recorded on return, ledger, collection | **Fines** |
+| **Reservations** | First-come-first-served queue, 2-day hold, expiry passes the copy on | **Reservations** |
+| **Digital resources** | E-books, journals, audiobooks, videos, websites and databases, with links, *Open* or *Members only* access, and view counts | **Digital Library** |
+| **RFID / barcode integration** | Scan boxes on Issue Book (member card, then book) and Return Book (scanning a book opens its return). Printable **EAN-13** book labels and **Code 39** library cards. Works with any USB/Bluetooth barcode scanner or RFID reader in keyboard mode (type a code and press Enter) | **Issue Book**, **Return Book**, book and member panels |
+| **Library reports** | 9 reports: circulation, overdue, fines, most borrowed, categories, member activity, inventory, acquisitions and digital usage. Each has a date range, summary figures, CSV export and printing | **Reports** |
+
 ### Extra features
 
 - **Dashboard analytics:**
@@ -131,6 +146,13 @@ The test suite checks this invariant after every test.
 | GET | `/api/stats` | Dashboard analytics (14-day activity, categories, top books, due soon, recent activity) |
 | GET | `/api/activity?limit=` | Activity timeline |
 | GET | `/api/reports/books.csv`, `members.csv`, `fines.csv`, `books-template.csv` | CSV exports and the import template |
+| POST | `/api/members/:id/renew-membership` | `{ months? }`, default 12 |
+| GET / POST / PUT | `/api/acquisitions`, `/api/acquisitions/:id` | Purchase requests |
+| POST | `/api/acquisitions/:id/order` · `/receive` · `/cancel` | Acquisition workflow (receive adds copies to the catalogue) |
+| GET / POST / PUT / DELETE | `/api/digital`, `/api/digital/:id` | Digital resources (`?q=&type=`) |
+| POST | `/api/digital/:id/open` | Counts a view and returns the link |
+| GET | `/api/scan?code=` | Barcode/RFID lookup: member card or book ISBN (with active loans) |
+| GET | `/api/report-types`, `/api/report/:name?from=&to=`, `/api/report/:name.csv` | Reports as JSON or CSV |
 | GET | `/api/reservations?status=open\|waiting\|ready\|closed\|all` | List reservations with queue position |
 | POST | `/api/reservations` | `{ memberId, bookId }` |
 | POST | `/api/reservations/:id/cancel` | Cancel a reservation (a held copy moves to the next person) |
@@ -174,6 +196,8 @@ The `supabase/` folder contains the same data model and business rules for Supab
 | `functions.sql` | The rules as SQL functions (`issue_book`, `return_book`, `renew_issue`, `reserve_book`, `cancel_reservation`, `pay_fines`, `delete_book`, `expire_holds`) plus dashboard views (`v_dashboard`, `v_overdue`, `v_ready_for_pickup`, `v_pending_reservations`, …) |
 | `seed.sql` | Demo data: 60 members, 33 books, loans, an unpaid fine, a queue and a held copy (dates relative to today) |
 | `queries.sql` | Everyday queries (dashboard, search, fines, due soon, who has a book, health check) and write examples |
+
+**Upgrading an existing Supabase database** (keeps all data): run `supabase/upgrade-modules.sql` once in the SQL Editor. It adds publisher/year/shelf, membership plans and expiry, the acquisitions and digital resources tables, and the updated rule functions.
 
 **Setup:** in the Supabase dashboard open **SQL Editor → New query**, paste **`supabase/setup.sql`** (schema + functions + demo data in one file) and click **Run**. Or run `schema.sql`, `functions.sql` and `seed.sql` separately, in that order. Only the server should call the write functions, using the `service_role` key or the database connection string. Never put that key in browser code.
 
