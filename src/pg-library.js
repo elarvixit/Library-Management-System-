@@ -99,10 +99,12 @@ export class PgLibrary {
         : `Could not connect to the database (${err.code || err.message}). Check DATABASE_URL.`, 500);
     }
     try {
-      await client.query('begin');
-      await client.query(`select set_config('TimeZone', $1, true)`, [this.timeZone]);
-      await client.query('select expire_holds()');
-      const { rows: [{ d }] } = await client.query('select current_date::text as d');
+      // One round trip instead of four: start the transaction, set the library time zone,
+      // release uncollected holds and read today's date. (Matters when the database is far away.)
+      const tz = this.timeZone.replace(/[^A-Za-z0-9_/+-]/g, '');
+      const res = await client.query(
+        `begin; select set_config('TimeZone', '${tz}', true); select expire_holds(); select current_date::text as d`);
+      const { d } = (Array.isArray(res) ? res.at(-1) : res).rows[0];
       const t = {
         today: d,
         q: async (sql, params = []) => (await client.query(sql, params)).rows.map(flags),
