@@ -706,8 +706,8 @@ dialog::backdrop { background: rgba(16, 24, 40, .5); backdrop-filter: blur(3px);
 
 .hero { position: relative; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 28px; align-items: center;
   padding: 28px 32px; margin-bottom: 20px; border-radius: 20px; color: #fff;
-  background: radial-gradient(120% 140% at 100% 0%, #7c3aed 0%, transparent 55%), linear-gradient(135deg, #4338ca 0%, #4f46e5 45%, #6d28d9 100%);
-  box-shadow: 0 18px 40px -18px rgba(79, 70, 229, .55); }
+  background: radial-gradient(120% 140% at 100% 0%, #9f1239 0%, transparent 55%), linear-gradient(135deg, #5c0f1f 0%, #7f1d2d 45%, #9b2335 100%);
+  box-shadow: 0 18px 40px -18px rgba(127, 29, 45, .55); }
 .hero::before, .hero::after { content: ""; position: absolute; border-radius: 50%; background: rgba(255,255,255,.07); pointer-events: none; }
 .hero::before { width: 320px; height: 320px; right: -80px; top: -140px; }
 .hero::after { width: 180px; height: 180px; left: 38%; bottom: -110px; }
@@ -722,8 +722,8 @@ dialog::backdrop { background: rgba(16, 24, 40, .5); backdrop-filter: blur(3px);
   border-radius: 11px; padding: 9px 14px; font-weight: 600; font-size: 13.5px; cursor: pointer; transition: background .15s, transform .15s; }
 .hbtn svg { width: 16px; height: 16px; }
 .hbtn:hover { background: rgba(255,255,255,.22); transform: translateY(-1px); }
-.hbtn.primary { background: #fff; color: #4338ca; border-color: #fff; }
-.hbtn.primary:hover { background: #eef2ff; }
+.hbtn.primary { background: #fff; color: #7f1d2d; border-color: #fff; }
+.hbtn.primary:hover { background: #fdf2f4; }
 .hero-side { display: flex; align-items: center; gap: 22px; padding: 16px 20px; border-radius: 16px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.16); }
 .ring { width: 120px; height: 120px; flex: none; }
 .ring-track { fill: none; stroke: rgba(255,255,255,.18); stroke-width: 12; }
@@ -932,20 +932,20 @@ body::before { content: ""; position: fixed; inset: 0; z-index: 0; pointer-event
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body::before { opacity: .09; } }
 .app { position: relative; z-index: 1; }
 
-/* dashboard banner: the library scene behind a purple tint so the text stays readable */
+/* dashboard banner: the library scene behind a maroon tint so the text stays readable */
 .hero {
   background:
-    linear-gradient(100deg, rgba(40, 36, 120, .95) 0%, rgba(67, 56, 202, .86) 36%, rgba(79, 70, 229, .45) 64%, rgba(109, 40, 217, .18) 100%),
+    linear-gradient(100deg, rgba(60, 8, 20, .95) 0%, rgba(122, 24, 42, .86) 36%, rgba(140, 30, 50, .45) 64%, rgba(120, 20, 40, .18) 100%),
     url(img/library-scene.svg) right center / cover no-repeat,
-    #4338ca;
+    #7f1d2d;
 }
 .hero::before, .hero::after { background: rgba(255, 255, 255, .05); }
-.hero-side { background: rgba(24, 20, 70, .42); border-color: rgba(255, 255, 255, .2); backdrop-filter: blur(6px); }
-.hero-date { background: rgba(24, 20, 70, .35); }
+.hero-side { background: rgba(50, 8, 18, .42); border-color: rgba(255, 255, 255, .2); backdrop-filter: blur(6px); }
+.hero-date { background: rgba(50, 8, 18, .35); }
 @media (max-width: 1100px) {
   .hero { background:
-    linear-gradient(180deg, rgba(40, 36, 120, .95) 0%, rgba(67, 56, 202, .88) 60%, rgba(79, 70, 229, .75) 100%),
-    url(img/library-scene.svg) center / cover no-repeat, #4338ca; }
+    linear-gradient(180deg, rgba(60, 8, 20, .95) 0%, rgba(122, 24, 42, .88) 60%, rgba(140, 30, 50, .75) 100%),
+    url(img/library-scene.svg) center / cover no-repeat, #7f1d2d; }
 }
 
 /* the same artwork on the sidebar brand strip, very subtle */
@@ -976,8 +976,8 @@ body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events
 /* dashboard banner: show more of the library */
 .hero {
   background:
-    linear-gradient(100deg, rgba(36, 32, 110, .92) 0%, rgba(67, 56, 202, .78) 34%, rgba(79, 70, 229, .32) 62%, rgba(109, 40, 217, .08) 100%),
-    url(img/library-scene.svg) right center / cover no-repeat, #4338ca;
+    linear-gradient(100deg, rgba(56, 8, 18, .92) 0%, rgba(122, 24, 42, .78) 34%, rgba(140, 30, 50, .32) 62%, rgba(120, 20, 40, .08) 100%),
+    url(img/library-scene.svg) right center / cover no-repeat, #7f1d2d;
 }
 
 /* logo */
